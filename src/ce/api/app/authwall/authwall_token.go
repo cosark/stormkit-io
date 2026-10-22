@@ -1,11 +1,13 @@
 package authwall
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/user"
 	"github.com/stormkit-io/stormkit-io/src/lib/types"
+	"github.com/stormkit-io/stormkit-io/src/lib/utils"
 )
 
 const (
@@ -40,11 +42,32 @@ func (t Token) Form(returnTo string) (string, error) {
 	})
 }
 
-// Session returns the token issued after a successful login.
-func (t Token) Session() (string, error) {
+// Session is a verified session of an environment's Auth Wall.
+type Session struct {
+	// Email is the email of the login the visitor logged in with.
+	Email string `json:"email,omitempty"`
+
+	// Metadata is the login's metadata at the time the visitor logged in.
+	Metadata string `json:"metadata,omitempty"`
+}
+
+// Session returns the token issued after a successful login. The login's email
+// and metadata ride the token, so they reach the app without a lookup on every
+// request; a change to the metadata reaches it on the next login. They are
+// encrypted, since the token is first handed over in the page's URL.
+func (t Token) Session(s Session) (string, error) {
+	login, err := json.Marshal(s)
+
+	if err != nil {
+		return "", err
+	}
+
 	return user.JWT(user.JWTParams{
 		Purpose: user.PurposeAuthWallSession,
-		Claims:  jwt.MapClaims{"envId": t.EnvID.String()},
+		Claims: jwt.MapClaims{
+			"envId": t.EnvID.String(),
+			"login": utils.EncryptToString(string(login)),
+		},
 	})
 }
 
@@ -81,9 +104,22 @@ func (t Token) ParseForm(token string) *Form {
 	}
 }
 
-// IsValidSession reports whether token is a session of this environment.
-func (t Token) IsValidSession(token string) bool {
-	return t.verify(verifyParams{token: token, purpose: user.PurposeAuthWallSession, maxMins: sessionMaxMins}) != nil
+// ParseSession verifies a session token of this environment. It returns nil
+// when the token is not one.
+func (t Token) ParseSession(token string) *Session {
+	claims := t.verify(verifyParams{token: token, purpose: user.PurposeAuthWallSession, maxMins: sessionMaxMins})
+
+	if claims == nil {
+		return nil
+	}
+
+	session := &Session{}
+
+	if login, _ := claims["login"].(string); login != "" {
+		_ = json.Unmarshal([]byte(utils.DecryptToString(login)), session)
+	}
+
+	return session
 }
 
 type verifyParams struct {

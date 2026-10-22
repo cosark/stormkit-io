@@ -21,6 +21,7 @@ func handlerAuthLogins(req *app.RequestContext) *shttp.Response {
 		data = append(data, map[string]any{
 			"id":        user.LoginID,
 			"email":     user.LoginEmail,
+			"metadata":  user.Metadata,
 			"lastLogin": user.LastLogin.Unix(),
 		})
 	}

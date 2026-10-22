@@ -506,12 +506,42 @@ CREATE TABLE skitapi.auth_wall (
     login_email text NOT NULL,
     login_password text NOT NULL,
     last_login_at timestamp without time zone,
-    env_id bigint NOT NULL,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    team_id bigint NOT NULL,
+    login_metadata text DEFAULT ''::text NOT NULL,
+    all_apps boolean DEFAULT false NOT NULL
 );
 
 
 ALTER TABLE skitapi.auth_wall OWNER TO skitadmin;
+
+--
+-- Name: auth_wall_apps; Type: TABLE; Schema: skitapi; Owner: skitadmin
+--
+
+CREATE TABLE skitapi.auth_wall_apps (
+    login_id bigint NOT NULL,
+    app_id bigint NOT NULL
+);
+
+
+ALTER TABLE skitapi.auth_wall_apps OWNER TO skitadmin;
+
+--
+-- Name: auth_wall_backup; Type: TABLE; Schema: skitapi; Owner: skitadmin
+--
+
+CREATE TABLE skitapi.auth_wall_backup (
+    login_id bigint,
+    login_email text,
+    login_password text,
+    last_login_at timestamp without time zone,
+    env_id bigint,
+    created_at timestamp without time zone
+);
+
+
+ALTER TABLE skitapi.auth_wall_backup OWNER TO skitadmin;
 
 --
 -- Name: auth_wall_login_id_seq; Type: SEQUENCE; Schema: skitapi; Owner: skitadmin
@@ -1458,6 +1488,14 @@ ALTER TABLE ONLY skitapi.audit_logs
 
 
 --
+-- Name: auth_wall_apps auth_wall_apps_pkey; Type: CONSTRAINT; Schema: skitapi; Owner: skitadmin
+--
+
+ALTER TABLE ONLY skitapi.auth_wall_apps
+    ADD CONSTRAINT auth_wall_apps_pkey PRIMARY KEY (login_id, app_id);
+
+
+--
 -- Name: auth_wall auth_wall_pkey; Type: CONSTRAINT; Schema: skitapi; Owner: skitadmin
 --
 
@@ -1623,10 +1661,17 @@ CREATE UNIQUE INDEX apps_display_name_unique_key ON skitapi.apps USING btree (di
 
 
 --
--- Name: auth_wall_env_id_login_email; Type: INDEX; Schema: skitapi; Owner: skitadmin
+-- Name: auth_wall_apps_app_id; Type: INDEX; Schema: skitapi; Owner: skitadmin
 --
 
-CREATE UNIQUE INDEX auth_wall_env_id_login_email ON skitapi.auth_wall USING btree (env_id, login_email);
+CREATE INDEX auth_wall_apps_app_id ON skitapi.auth_wall_apps USING btree (app_id);
+
+
+--
+-- Name: auth_wall_team_id_login_email; Type: INDEX; Schema: skitapi; Owner: skitadmin
+--
+
+CREATE UNIQUE INDEX auth_wall_team_id_login_email ON skitapi.auth_wall USING btree (team_id, lower(login_email));
 
 
 --
@@ -1932,11 +1977,27 @@ ALTER TABLE ONLY skitapi.audit_logs
 
 
 --
--- Name: auth_wall auth_wall_env_id_fkey; Type: FK CONSTRAINT; Schema: skitapi; Owner: skitadmin
+-- Name: auth_wall_apps auth_wall_apps_app_id_fkey; Type: FK CONSTRAINT; Schema: skitapi; Owner: skitadmin
+--
+
+ALTER TABLE ONLY skitapi.auth_wall_apps
+    ADD CONSTRAINT auth_wall_apps_app_id_fkey FOREIGN KEY (app_id) REFERENCES skitapi.apps(app_id) ON DELETE CASCADE;
+
+
+--
+-- Name: auth_wall_apps auth_wall_apps_login_id_fkey; Type: FK CONSTRAINT; Schema: skitapi; Owner: skitadmin
+--
+
+ALTER TABLE ONLY skitapi.auth_wall_apps
+    ADD CONSTRAINT auth_wall_apps_login_id_fkey FOREIGN KEY (login_id) REFERENCES skitapi.auth_wall(login_id) ON DELETE CASCADE;
+
+
+--
+-- Name: auth_wall auth_wall_team_id_fkey; Type: FK CONSTRAINT; Schema: skitapi; Owner: skitadmin
 --
 
 ALTER TABLE ONLY skitapi.auth_wall
-    ADD CONSTRAINT auth_wall_env_id_fkey FOREIGN KEY (env_id) REFERENCES skitapi.apps_build_conf(env_id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT auth_wall_team_id_fkey FOREIGN KEY (team_id) REFERENCES skitapi.teams(team_id) ON DELETE CASCADE;
 
 
 --
