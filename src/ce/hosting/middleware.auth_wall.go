@@ -17,7 +17,19 @@ var stormkitErrors = map[string]string{
 	"token_generation_failed": "Token generation failed. Please try again.",
 }
 
+// Headers that carry the Auth Wall login to the app.
+const (
+	HeaderAuthWallEmail    = "X-Auth-Wall-Email"
+	HeaderAuthWallMetadata = "X-Auth-Wall-Metadata"
+)
+
+// WithAuthWall shows the login form to visitors of a protected environment
+// until they log in, and passes the login's email and metadata to the app.
 func WithAuthWall(req *RequestContext) (*shttp.Response, error) {
+	// Only the wall sets these, so a visitor cannot pose as a login.
+	req.Header.Del(HeaderAuthWallEmail)
+	req.Header.Del(HeaderAuthWallMetadata)
+
 	authWall := req.Host.Config.AuthWall
 
 	if authWall == "" {
@@ -31,8 +43,18 @@ func WithAuthWall(req *RequestContext) (*shttp.Response, error) {
 	tokens := authwall.Token{EnvID: req.Host.Config.EnvID}
 
 	// Already logged in for this environment
-	if cookie, err := req.Cookie(SESSION_COOKIE_NAME); cookie != nil && err == nil && tokens.IsValidSession(cookie.Value) {
-		return nil, nil
+	if cookie, err := req.Cookie(SESSION_COOKIE_NAME); cookie != nil && err == nil {
+		if session := tokens.ParseSession(cookie.Value); session != nil {
+			if session.Email != "" {
+				req.Header.Set(HeaderAuthWallEmail, session.Email)
+			}
+
+			if session.Metadata != "" {
+				req.Header.Set(HeaderAuthWallMetadata, session.Metadata)
+			}
+
+			return nil, nil
+		}
 	}
 
 	// User logged in successfully:
@@ -40,7 +62,7 @@ func WithAuthWall(req *RequestContext) (*shttp.Response, error) {
 	// - Create a server-side cookie to handle session management
 	// - Redirect the user back to the original page
 	if token := req.Query().Get("stormkit_success"); token != "" {
-		if tokens.IsValidSession(token) {
+		if tokens.ParseSession(token) != nil {
 			url := req.URL()
 			query := url.Query()
 			query.Del("stormkit_success")

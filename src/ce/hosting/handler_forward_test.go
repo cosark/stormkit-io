@@ -1576,7 +1576,7 @@ func (s *HandlerForwardSuite) authWallHost() *hosting.Host {
 func (s *HandlerForwardSuite) Test_AuthWall_LoginSuccess() {
 	host := s.authWallHost()
 
-	token, err := authwall.Token{EnvID: types.ID(5)}.Session()
+	token, err := authwall.Token{EnvID: types.ID(5)}.Session(authwall.Session{})
 	s.Require().NoError(err)
 
 	req := s.newRequest(host, fmt.Sprintf("/my-page?a=b&stormkit_success=%s", token))
@@ -1599,7 +1599,7 @@ func (s *HandlerForwardSuite) Test_AuthWall_LoginSuccess() {
 func (s *HandlerForwardSuite) Test_AuthWall_AlreadyLoggedIn() {
 	host := s.authWallHost()
 
-	token, err := authwall.Token{EnvID: types.ID(5)}.Session()
+	token, err := authwall.Token{EnvID: types.ID(5)}.Session(authwall.Session{})
 	s.Require().NoError(err)
 
 	req := s.newRequest(host, "/my-page?a=b")
@@ -1660,7 +1660,7 @@ func (s *HandlerForwardSuite) Test_AuthWall_RejectsOtherTokens() {
 	anonymous, err := user.JWT(user.JWTParams{Purpose: user.PurposeOAuthState, Claims: jwt.MapClaims{"provider": "github"}})
 	s.Require().NoError(err)
 
-	otherEnv, err := authwall.Token{EnvID: types.ID(6)}.Session()
+	otherEnv, err := authwall.Token{EnvID: types.ID(6)}.Session(authwall.Session{})
 	s.Require().NoError(err)
 
 	for _, token := range []string{formToken[1], anonymous, otherEnv} {

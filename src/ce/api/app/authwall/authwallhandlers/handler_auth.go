@@ -56,22 +56,24 @@ func handlerAuth(req *shttp.RequestContext) *shttp.Response {
 		return failedLoginResponse(referrer, "invalid_credentials")
 	}
 
-	aw := &authwall.AuthWall{
-		LoginEmail:    email,
-		LoginPassword: password,
-		EnvID:         envID,
+	store := authwall.Store()
+	aw, err := store.Login(req.Context(), authwall.LoginParams{
+		EnvID:    envID,
+		Email:    email,
+		Password: password,
+	})
+
+	if err != nil || aw == nil {
+		return failedLoginResponse(referrer, "invalid_credentials")
 	}
 
-	jwtToken, err := tokens.Session()
+	jwtToken, err := tokens.Session(authwall.Session{
+		Email:    aw.LoginEmail,
+		Metadata: aw.Metadata,
+	})
 
 	if err != nil || jwtToken == "" {
 		return failedLoginResponse(referrer, "token_generation_failed")
-	}
-
-	store := authwall.Store()
-
-	if valid, err := store.Login(req.Context(), aw); err != nil || !valid {
-		return failedLoginResponse(referrer, "invalid_credentials")
 	}
 
 	if err := store.UpdateLastLogin(req.Context(), aw.LoginID); err != nil {

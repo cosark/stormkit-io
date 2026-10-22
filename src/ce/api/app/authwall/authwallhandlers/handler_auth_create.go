@@ -1,6 +1,7 @@
 package authwallhandlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -9,13 +10,18 @@ import (
 	"github.com/stormkit-io/stormkit-io/src/ee/api/audit"
 	"github.com/stormkit-io/stormkit-io/src/lib/database"
 	"github.com/stormkit-io/stormkit-io/src/lib/shttp"
+	"github.com/stormkit-io/stormkit-io/src/lib/types"
 	"github.com/stormkit-io/stormkit-io/src/lib/utils"
 )
 
 type AuthCreateRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Metadata string `json:"metadata"`
 }
+
+// passwordMaxLength is the longest password bcrypt can hash.
+const passwordMaxLength = 72
 
 func handlerAuthCreate(req *app.RequestContext) *shttp.Response {
 	data := &AuthCreateRequest{}
@@ -38,20 +44,45 @@ func handlerAuthCreate(req *app.RequestContext) *shttp.Response {
 		})
 	}
 
-	aw := &authwall.AuthWall{
-		LoginEmail:    data.Email,
-		LoginPassword: data.Password,
-		EnvID:         req.EnvID,
+	if len(data.Password) > passwordMaxLength {
+		return shttp.BadRequest(map[string]any{
+			"error": fmt.Sprintf("Password must be at most %d characters long.", passwordMaxLength),
+		})
 	}
 
-	err := authwall.Store().CreateLogin(req.Context(), aw)
+	if msg := authwall.ValidateMetadata(data.Metadata); msg != "" {
+		return shttp.BadRequest(map[string]any{
+			"error": msg,
+		})
+	}
+
+	store := authwall.Store()
+	teamID, err := store.EnvTeamID(req.Context(), req.EnvID)
 
 	if err != nil {
+		return shttp.Error(err)
+	}
+
+	if teamID == 0 {
+		return shttp.BadRequest(map[string]any{
+			"error": "The app does not belong to a team. Move it to a team first.",
+		})
+	}
+
+	aw := &authwall.AuthWall{
+		TeamID:        teamID,
+		LoginEmail:    data.Email,
+		LoginPassword: data.Password,
+		Metadata:      data.Metadata,
+		AppIDs:        []types.ID{req.App.ID},
+	}
+
+	if err := store.CreateLogin(req.Context(), aw); err != nil {
 		if database.IsDuplicate(err) {
 			return &shttp.Response{
 				Status: http.StatusConflict,
 				Data: map[string]string{
-					"error": "A user with the same email already exists for this environment.",
+					"error": "A login with the same email already exists in this team.",
 				},
 			}
 		}

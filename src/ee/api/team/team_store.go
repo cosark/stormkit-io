@@ -136,10 +136,57 @@ var stmt = struct {
 			member_role <> $3;
 	`, tableTeamMembers),
 
+	// migrateApp moves the app $2 to the team $1, together with the Auth Wall
+	// logins that open it: each is copied into the new team (or merged into the
+	// login there with the same email, which keeps its password) with access to
+	// the app, and loses its access to the app in the old team. A login left
+	// without access to any app is deleted. One statement, so the app never
+	// moves without its logins.
 	migrateApp: fmt.Sprintf(`
-		UPDATE %s
-		SET team_id = $1
-		WHERE app_id = $2;
+		WITH src AS (
+			SELECT COALESCE(a.team_id, t.team_id) AS team_id
+			FROM %[1]s a
+			LEFT JOIN teams t ON t.user_id = a.user_id AND t.is_default IS TRUE
+			WHERE a.app_id = $2
+		), moved AS (
+			UPDATE %[1]s SET team_id = $1 WHERE app_id = $2
+		), logins AS (
+			SELECT aw.*
+			FROM auth_wall aw, src
+			WHERE
+				aw.team_id = src.team_id AND
+				src.team_id <> $1 AND (
+					aw.all_apps OR EXISTS (
+						SELECT 1 FROM auth_wall_apps awa
+						WHERE awa.login_id = aw.login_id AND awa.app_id = $2
+					)
+				)
+		), copied AS (
+			INSERT INTO auth_wall
+				(team_id, login_email, login_password, login_metadata, last_login_at, created_at)
+			SELECT
+				$1, l.login_email, l.login_password, l.login_metadata, l.last_login_at, l.created_at
+			FROM logins l
+			ON CONFLICT (team_id, LOWER(login_email))
+				DO UPDATE SET login_email = auth_wall.login_email
+			RETURNING login_id
+		), granted AS (
+			INSERT INTO auth_wall_apps (login_id, app_id)
+			SELECT login_id, $2 FROM copied
+			ON CONFLICT DO NOTHING
+		), revoked AS (
+			DELETE FROM auth_wall_apps
+			WHERE app_id = $2 AND login_id IN (SELECT login_id FROM logins)
+			RETURNING login_id
+		)
+		DELETE FROM auth_wall aw
+		WHERE
+			aw.login_id IN (SELECT login_id FROM revoked) AND
+			aw.all_apps IS FALSE AND
+			NOT EXISTS (
+				SELECT 1 FROM auth_wall_apps awa
+				WHERE awa.login_id = aw.login_id AND awa.app_id <> $2
+			);
 	`, tableApps),
 }
 

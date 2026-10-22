@@ -16,6 +16,7 @@ import (
 	"github.com/stormkit-io/stormkit-io/src/lib/factory"
 	"github.com/stormkit-io/stormkit-io/src/lib/shttp"
 	"github.com/stormkit-io/stormkit-io/src/lib/shttp/shttptest"
+	"github.com/stormkit-io/stormkit-io/src/lib/types"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -44,7 +45,8 @@ func (s *HandlerAuthDeleteSuite) Test_Delete_Success() {
 	aw := &authwall.AuthWall{
 		LoginEmail:    "email@example.org",
 		LoginPassword: "123pass",
-		EnvID:         env.ID,
+		TeamID:        app.TeamID,
+		AppIDs:        []types.ID{app.ID},
 	}
 
 	s.NoError(authwall.Store().CreateLogin(context.Background(), aw))
@@ -76,7 +78,8 @@ func (s *HandlerAuthDeleteSuite) Test_Delete_Success_Multiple() {
 	aw := &authwall.AuthWall{
 		LoginEmail:    "email@example.org",
 		LoginPassword: "123pass",
-		EnvID:         env.ID,
+		TeamID:        app.TeamID,
+		AppIDs:        []types.ID{app.ID},
 	}
 
 	s.NoError(authwall.Store().CreateLogin(context.Background(), aw))
@@ -84,7 +87,8 @@ func (s *HandlerAuthDeleteSuite) Test_Delete_Success_Multiple() {
 	aw2 := &authwall.AuthWall{
 		LoginEmail:    "email-2@example.org",
 		LoginPassword: "123pass5",
-		EnvID:         env.ID,
+		TeamID:        app.TeamID,
+		AppIDs:        []types.ID{app.ID},
 	}
 
 	s.NoError(authwall.Store().CreateLogin(context.Background(), aw2))
@@ -134,6 +138,56 @@ func (s *HandlerAuthDeleteSuite) Test_Delete_Success_Multiple() {
 			},
 		},
 	}, audits[0])
+}
+
+// Test_Delete_KeepsOtherApps verifies that deleting a login from an app's wall
+// only takes away its access to that app, and leaves logins of other apps
+// alone.
+func (s *HandlerAuthDeleteSuite) Test_Delete_KeepsOtherApps() {
+	usr := s.MockUser()
+	app := s.MockApp(usr)
+	env := s.MockEnv(app)
+	otherEnv := s.MockEnv(s.MockApp(usr))
+	otherAppID := otherEnv.AppID
+
+	shared := &authwall.AuthWall{
+		TeamID:        app.TeamID,
+		LoginEmail:    "shared@example.org",
+		LoginPassword: "123pass",
+		AppIDs:        []types.ID{app.ID, otherAppID},
+	}
+
+	other := &authwall.AuthWall{
+		TeamID:        app.TeamID,
+		LoginEmail:    "other@example.org",
+		LoginPassword: "123pass",
+		AppIDs:        []types.ID{otherAppID},
+	}
+
+	s.NoError(authwall.Store().CreateLogin(context.Background(), shared))
+	s.NoError(authwall.Store().CreateLogin(context.Background(), other))
+
+	response := shttptest.RequestWithHeaders(
+		shttp.NewRouter().RegisterService(authwallhandlers.Services).Router().Handler(),
+		shttp.MethodDelete,
+		fmt.Sprintf("/auth-wall?id=%s,%s", shared.LoginID.String(), other.LoginID.String()),
+		map[string]any{
+			"envId": env.ID.String(),
+		},
+		map[string]string{
+			"authorization": usertest.Authorization(usr.ID),
+		},
+	)
+
+	s.Equal(http.StatusOK, response.Code)
+
+	logins, err := authwall.Store().Logins(context.Background(), env.ID)
+	s.NoError(err)
+	s.Empty(logins)
+
+	logins, err = authwall.Store().Logins(context.Background(), otherEnv.ID)
+	s.NoError(err)
+	s.Len(logins, 2)
 }
 
 func TestHandlerAuthDeleteSuite(t *testing.T) {

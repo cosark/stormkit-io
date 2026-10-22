@@ -27,7 +27,10 @@ func handlerAuthDelete(req *app.RequestContext) *shttp.Response {
 		})
 	}
 
-	err := authwall.Store().RemoveLogins(req.Context(), req.EnvID, ids)
+	err := authwall.Store().RemoveAppAccess(req.Context(), authwall.RemoveAppAccessParams{
+		AppID:    req.App.ID,
+		LoginIDs: ids,
+	})
 
 	if err != nil {
 		return shttp.Error(err)

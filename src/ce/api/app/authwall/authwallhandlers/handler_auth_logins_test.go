@@ -14,6 +14,7 @@ import (
 	"github.com/stormkit-io/stormkit-io/src/lib/factory"
 	"github.com/stormkit-io/stormkit-io/src/lib/shttp"
 	"github.com/stormkit-io/stormkit-io/src/lib/shttp/shttptest"
+	"github.com/stormkit-io/stormkit-io/src/lib/types"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -40,9 +41,11 @@ func (s *HandlerAuthLoginsSuite) Test_AuthList_Success() {
 	env := s.MockEnv(app)
 
 	aw := &authwall.AuthWall{
+		TeamID:        app.TeamID,
 		LoginEmail:    "email@example.org",
 		LoginPassword: "123pass",
-		EnvID:         env.ID,
+		Metadata:      "client",
+		AppIDs:        []types.ID{app.ID},
 	}
 
 	s.NoError(authwall.Store().CreateLogin(context.Background(), aw))
@@ -59,7 +62,7 @@ func (s *HandlerAuthLoginsSuite) Test_AuthList_Success() {
 
 	expected := fmt.Sprintf(`{
 		"logins": [
-			{ "email": "email@example.org", "lastLogin": 0, "id": "%d" }
+			{ "email": "email@example.org", "metadata": "client", "lastLogin": 0, "id": "%d" }
 		]
 	}`, aw.LoginID)
 
