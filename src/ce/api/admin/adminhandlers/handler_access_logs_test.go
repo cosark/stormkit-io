@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stormkit-io/stormkit-io/src/ce/api/accesslog"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/admin/adminhandlers"
@@ -100,6 +101,22 @@ func (s *HandlerAccessLogsSuite) Test_Admin_FiltersBots() {
 	s.Equal(http.StatusOK, res.Code)
 	s.Contains(body, "/humans.txt")
 	s.NotContains(body, "/robots.txt")
+}
+
+// Test_Timeout_BadRequest verifies that a query exceeding the statement timeout
+// is reported as a 400 asking the admin to narrow the search, not a 500.
+func (s *HandlerAccessLogsSuite) Test_Timeout_BadRequest() {
+	admin := s.MockUser(map[string]any{"IsAdmin": true})
+	s.seed()
+
+	defaultTimeout := accesslog.SelectLogsTimeout
+	accesslog.SelectLogsTimeout = time.Nanosecond
+	defer func() { accesslog.SelectLogsTimeout = defaultTimeout }()
+
+	res := s.request(usertest.Authorization(admin.ID), "")
+
+	s.Equal(http.StatusBadRequest, res.Code)
+	s.JSONEq(`{"error":"The query took too long. Narrow the time range or pick an app."}`, res.String())
 }
 
 func (s *HandlerAccessLogsSuite) Test_NonAdmin_Rejected() {

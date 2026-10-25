@@ -235,6 +235,19 @@ func (s *HandlerAccessLogsGetSuite) Test_Success_IgnoresAppIdQueryParam() {
 	s.ElementsMatch([]string{"/humans.txt", "/robots.txt"}, paths)
 }
 
+// Test_Timeout_BadRequest verifies that a query exceeding the statement timeout
+// is reported as a 400 rather than a 500.
+func (s *HandlerAccessLogsGetSuite) Test_Timeout_BadRequest() {
+	defaultTimeout := accesslog.SelectLogsTimeout
+	accesslog.SelectLogsTimeout = time.Nanosecond
+	defer func() { accesslog.SelectLogsTimeout = defaultTimeout }()
+
+	res := s.request("", usertest.Authorization(s.user.ID))
+
+	s.Equal(http.StatusBadRequest, res.Code)
+	s.JSONEq(`{"error":"The query took too long. Narrow the time range or add more filters."}`, res.String())
+}
+
 func (s *HandlerAccessLogsGetSuite) Test_Forbidden_NotMember() {
 	other := s.MockUser()
 

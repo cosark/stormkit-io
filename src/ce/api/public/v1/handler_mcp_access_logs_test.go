@@ -3,6 +3,7 @@ package publicapiv1_test
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/stormkit-io/stormkit-io/src/ce/api/accesslog"
 	"github.com/stormkit-io/stormkit-io/src/lib/factory"
@@ -99,6 +100,31 @@ func (s *HandlerMCPSuite) Test_GetAccessLogs_MissingEnvId() {
 
 	env := s.rpcOK(resp)
 	s.True(env["result"].(map[string]any)["isError"].(bool))
+}
+
+// Test_GetAccessLogs_Timeout verifies that a timed-out query surfaces as a tool
+// error carrying the explanation instead of an internal error.
+func (s *HandlerMCPSuite) Test_GetAccessLogs_Timeout() {
+	usr := s.MockUser()
+	appl := s.MockApp(usr)
+	mockEnv := s.MockEnv(appl)
+	key := s.userKey(usr)
+
+	s.mockAccessLogs(mockEnv)
+
+	defaultTimeout := accesslog.SelectLogsTimeout
+	accesslog.SelectLogsTimeout = time.Nanosecond
+	defer func() { accesslog.SelectLogsTimeout = defaultTimeout }()
+
+	resp := s.post(key.Value, mcpToolCall(1, "get_access_logs", map[string]any{
+		"envId": mockEnv.ID.String(),
+	}))
+
+	result := s.rpcOK(resp)["result"].(map[string]any)
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+
+	s.True(result["isError"].(bool))
+	s.Contains(text, "The query took too long")
 }
 
 func (s *HandlerMCPSuite) Test_GetAccessLogs_Forbidden_NotMember() {

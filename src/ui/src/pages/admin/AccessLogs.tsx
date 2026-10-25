@@ -67,24 +67,35 @@ interface UseFetchAccessLogsProps {
   query: string;
   cursor?: string;
   refreshToken: number;
+  enabled: boolean;
 }
 
 const useFetchAccessLogs = ({
   query,
   cursor,
   refreshToken,
+  enabled,
 }: UseFetchAccessLogsProps) => {
   const [logs, setLogs] = useState<AccessLogEntry[]>([]);
   const [nextCursor, setNextCursor] = useState<string>();
   const [hasNextPage, setHasNextPage] = useState(false);
   const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
 
   useEffect(() => {
     let unmounted = false;
 
-    setLoading(true);
     setError(undefined);
+
+    if (!enabled) {
+      setLogs([]);
+      setHasNextPage(false);
+      setNextCursor(undefined);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
 
     const params = new URLSearchParams(query);
 
@@ -106,9 +117,24 @@ const useFetchAccessLogs = ({
         setNextCursor(res.pagination.cursor);
         setLogs(cursor ? prev => [...prev, ...res.accessLogs] : res.accessLogs);
       })
-      .catch(() => {
+      .catch(async res => {
+        let message = "Something went wrong while fetching access logs.";
+
+        if (res?.status === 400) {
+          try {
+            const { error } = (await res.json()) as { error?: string };
+
+            if (typeof error === "string" && error) {
+              message = error;
+            }
+          } catch {
+            // Not a JSON body: keep the generic message.
+          }
+        }
+
+        // Reading the body is async, so the filters may have changed meanwhile.
         if (!unmounted) {
-          setError("Something went wrong while fetching access logs.");
+          setError(message);
         }
       })
       .finally(() => {
@@ -120,10 +146,12 @@ const useFetchAccessLogs = ({
     return () => {
       unmounted = true;
     };
-  }, [query, cursor, refreshToken]);
+  }, [query, cursor, refreshToken, enabled]);
 
   return { logs, error, loading, hasNextPage, nextCursor };
 };
+
+const isPositiveInt = (value?: string) => /^[1-9]\d*$/.test(value || "");
 
 const formatTs = (ts: string) =>
   ts ? new Date(Number(ts) * 1000).toLocaleString() : "";
@@ -248,6 +276,14 @@ export default function AccessLogs() {
 
   const cursor = cursorState?.query === query ? cursorState.value : undefined;
 
+  // Logs are only indexed by app and by domain, so an unscoped search scans
+  // every row in the window and times out on large installs.
+  const scoped = isPositiveInt(values.appId) || isPositiveInt(values.domainId);
+
+  const invalidId =
+    (values.appId && !isPositiveInt(values.appId)) ||
+    (values.domainId && !isPositiveInt(values.domainId));
+
   // An absent `from` is not "unbounded" — the API falls back to the last 24
   // hours, so a `to` older than that silently matches nothing.
   const invertedRange = useMemo(() => {
@@ -263,6 +299,7 @@ export default function AccessLogs() {
     query,
     cursor,
     refreshToken,
+    enabled: scoped,
   });
 
   return (
@@ -270,19 +307,23 @@ export default function AccessLogs() {
       error={error}
       sx={{ backgroundColor: "container.transparent" }}
       info={
-        invertedRange
-          ? values.from
-            ? "The From bound is after the To bound, so nothing can match."
-            : "To is set without From, so the range falls back to the last 24 hours and nothing can match. Set a From bound."
-          : !loading && logs.length === 0
-            ? "No access logs match your filters."
-            : undefined
+        !scoped
+          ? invalidId
+            ? "App ID and Domain ID must be numeric. Pick an app to see its access logs."
+            : "Pick an app to see its access logs."
+          : invertedRange
+            ? values.from
+              ? "The From bound is after the To bound, so nothing can match."
+              : "To is set without From, so the range falls back to the last 24 hours and nothing can match. Set a From bound."
+            : !loading && !error && logs.length === 0
+              ? "No access logs match your filters."
+              : undefined
       }
       contentPadding={false}
     >
       <CardHeader
         title="Access Logs"
-        subtitle="Search raw request logs across all hosted applications. Defaults to the last 24 hours when no time range is set."
+        subtitle="Search raw request logs for a hosted application. Defaults to the last 24 hours when no time range is set."
       />
       <Box sx={{ px: 4, mb: 4, display: "flex", gap: 2, alignItems: "center" }}>
         <FilteredSearch
@@ -296,7 +337,7 @@ export default function AccessLogs() {
         <Button
           variant="contained"
           color="secondary"
-          disabled={loading}
+          disabled={loading || !scoped}
           sx={{ flexShrink: 0 }}
           onClick={() => {
             setCursorState(undefined);

@@ -1,6 +1,7 @@
 package adminhandlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/stormkit-io/stormkit-io/src/ce/api/accesslog"
@@ -12,6 +13,12 @@ func handlerAccessLogs(req *user.RequestContext) *shttp.Response {
 	params := accesslog.SelectLogsParamsFromQuery(req.Query())
 
 	logs, err := accesslog.NewStore().SelectLogs(req.Context(), params)
+
+	if errors.Is(err, accesslog.ErrQueryTimeout) {
+		return shttp.BadRequest(map[string]any{
+			"error": "The query took too long. Narrow the time range or pick an app.",
+		})
+	}
 
 	if err != nil {
 		return shttp.Error(err)
