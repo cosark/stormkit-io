@@ -146,7 +146,6 @@ func (s *HandlerAuthSuite) Test_Auth_RejectsOtherTokens() {
 // the session, to the protected page carried by the form token, not to the
 // Referer.
 func (s *HandlerAuthSuite) Test_Auth_Success() {
-	now := time.Now().UTC().Unix()
 	response := s.login(loginParams{Password: s.aw.LoginPassword})
 
 	s.Equal(http.StatusFound, response.Code)
@@ -169,7 +168,11 @@ func (s *HandlerAuthSuite) Test_Auth_Success() {
 	s.Require().NoError(err)
 	s.Require().NotNil(login)
 	s.True(login.LastLogin.Valid, "the login time is recorded")
-	s.GreaterOrEqual(login.LastLogin.Unix(), now)
+
+	// The login time is Postgres's NOW(), the start of the transaction, which
+	// in tests is opened before the test body runs; so it is checked to be
+	// recent rather than after a time taken in the test.
+	s.WithinDuration(time.Now(), login.LastLogin.Time, time.Minute)
 }
 
 // Test_Auth_HTTPSBehindProxy verifies that the return URL is upgraded to https
