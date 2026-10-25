@@ -326,52 +326,6 @@ export const useFetchEventBreakdown = ({
   return { breakdown, loading, error };
 };
 
-interface FetchCountriesProps {
-  envId: string;
-  domainId?: string;
-}
-
-interface ByCountry {
-  country: string;
-  value: number;
-}
-
-export const useFetchByCountries = ({
-  envId,
-  domainId,
-}: FetchCountriesProps) => {
-  const [countries, setCountries] = useState<ByCountry[]>([]);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!domainId) {
-      return;
-    }
-
-    api
-      .fetch<Record<string, number>>(
-        `/analytics/countries?envId=${envId}&domainId=${domainId}`,
-      )
-      .then(data => {
-        const countries: ByCountry[] = Object.keys(data).map(ref => ({
-          country: ref,
-          value: data[ref],
-        }));
-
-        setCountries(countries);
-      })
-      .catch(() => {
-        setError("Something went wrong while fetching countries.");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [envId, domainId]);
-
-  return { countries, loading, error };
-};
-
 interface AnalyticsStatusProps {
   appId: string;
   envId: string;
