@@ -126,19 +126,17 @@ func (l *Node) Stop(ctx context.Context) {
 		l.electID.Stop()
 	}
 
-	l.isLeader(ctx, func(isLeader bool) {
-		if isLeader {
-			_, err := l.do(ctx, "DEL", l.key)
+	if l.leadership(ctx) == leadershipHeld {
+		_, err := l.do(ctx, "DEL", l.key)
 
-			if err != nil {
-				slog.Errorf("error while revoking key: %s", err.Error())
-			}
-
-			if l.onRenounce != nil {
-				l.onRenounce(l)
-			}
+		if err != nil {
+			slog.Errorf("error while revoking key: %s", err.Error())
 		}
-	})
+
+		if l.onRenounce != nil {
+			l.onRenounce(l)
+		}
+	}
 }
 
 func (l *Node) elect(ctx context.Context) {
@@ -162,11 +160,15 @@ func (l *Node) elect(ctx context.Context) {
 			}
 
 			if reply == "OK" {
+				// Renewing every third of the TTL lets one failed renewal be
+				// retried before the key expires.
+				ticker := time.NewTicker(l.options.TTL / 3)
+
 				l.renewMu.Lock()
-				l.renewID = time.NewTicker(l.options.TTL / 2)
+				l.renewID = ticker
 				l.renewMu.Unlock()
 
-				go l.renew(ctx)
+				go l.renew(ctx, ticker)
 
 				if l.onLeader != nil {
 					l.onLeader(l)
@@ -180,39 +182,98 @@ func (l *Node) elect(ctx context.Context) {
 	}
 }
 
-func (l *Node) renew(ctx context.Context) {
+// renewScript extends the leader key only while this node still holds it, so a
+// takeover between the check and the extension can never extend another
+// node's lock. It returns 1 when the key was extended and 0 otherwise.
+const renewScript = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+	return redis.call("PEXPIRE", KEYS[1], ARGV[2])
+end
+
+return 0
+`
+
+// renew keeps the leader key alive on every tick. It returns once the
+// leadership is lost, after renouncing it and scheduling a new election.
+//
+// A failed renewal leaves the leadership unknown, so the node keeps leading
+// and retries on the next tick. Once a full TTL has passed without a
+// confirmed renewal, the key may have expired and been taken by another node,
+// so the node renounces rather than risk two leaders.
+func (l *Node) renew(ctx context.Context, ticker *time.Ticker) {
+	lastRenewed := time.Now()
+
 	for {
 		select {
 		case <-l.stopChan:
 			return
-		case <-l.renewID.C:
-			l.isLeader(ctx, func(isLeader bool) {
-				if isLeader {
-					_, err := l.do(ctx, "PEXPIRE", l.key, int(l.options.TTL/time.Millisecond))
-					if err != nil {
-						slog.Errorf("failed to renew leader key: %v", err)
-					}
-				} else {
-					l.renewMu.Lock()
-					l.renewID.Stop()
-					l.renewMu.Unlock()
+		case <-ticker.C:
+			state := l.extend(ctx)
 
-					time.AfterFunc(l.options.Wait, func() { l.elect(ctx) })
-					return
-				}
-			})
+			if state == leadershipHeld {
+				lastRenewed = time.Now()
+				continue
+			}
+
+			if state == leadershipUnknown && time.Since(lastRenewed) < l.options.TTL {
+				continue
+			}
+
+			l.renewMu.Lock()
+			ticker.Stop()
+			l.renewMu.Unlock()
+
+			if l.onRenounce != nil {
+				l.onRenounce(l)
+			}
+
+			time.AfterFunc(l.options.Wait, func() { l.elect(ctx) })
+			return
 		}
 	}
 }
 
-func (l *Node) isLeader(ctx context.Context, callback func(bool)) {
-	reply, err := l.do(ctx, "GET", l.key)
+// extend atomically extends the leader key if this node still holds it.
+func (l *Node) extend(ctx context.Context) leadershipState {
+	reply, err := l.do(ctx, "EVAL", renewScript, 1, l.key, l.id, int(l.options.TTL/time.Millisecond))
 
-	if err != nil && err != redis.Nil {
-		slog.Errorf("failed to get leader key: %v", err)
-		callback(false)
-		return
+	if err != nil {
+		slog.Errorf("failed to renew leader key: %v", err)
+		return leadershipUnknown
 	}
 
-	callback(reply == l.id)
+	if n, ok := reply.(int64); ok && n == 1 {
+		return leadershipHeld
+	}
+
+	return leadershipLost
+}
+
+type leadershipState int
+
+const (
+	leadershipHeld leadershipState = iota
+	leadershipLost
+	leadershipUnknown
+)
+
+// leadership reports whether this node holds the leader key. A Redis error
+// other than a missing key yields leadershipUnknown.
+func (l *Node) leadership(ctx context.Context) leadershipState {
+	reply, err := l.do(ctx, "GET", l.key)
+
+	if errors.Is(err, redis.Nil) {
+		return leadershipLost
+	}
+
+	if err != nil {
+		slog.Errorf("failed to get leader key: %v", err)
+		return leadershipUnknown
+	}
+
+	if reply == l.id {
+		return leadershipHeld
+	}
+
+	return leadershipLost
 }
