@@ -109,7 +109,7 @@ export default function Analytics() {
         />
         <TopPaths environment={environment} domain={domain!} ts={timeSpan} />
       </Box>
-      <ByCountries environment={environment} domain={domain!} />
+      <ByCountries environment={environment} domain={domain!} ts={timeSpan} />
     </Box>
   );
 }
