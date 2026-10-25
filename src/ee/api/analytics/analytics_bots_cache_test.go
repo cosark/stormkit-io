@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -74,14 +76,45 @@ func (s *BotVerdictCacheSuite) Test_EvictsLeastRecentlyUsed() {
 	}
 }
 
-// Test_OversizedUserAgentIsNotCached verifies that a client cannot park large
-// strings in the cache; it still gets a verdict.
-func (s *BotVerdictCacheSuite) Test_OversizedUserAgentIsNotCached() {
+// Test_OversizedUserAgentIsCachedTruncated verifies that a client cannot park
+// large strings in the cache: only the truncated user agent is stored.
+func (s *BotVerdictCacheSuite) Test_OversizedUserAgentIsCachedTruncated() {
 	d := newBotDetector()
-	ua := "Mozilla/5.0 " + strings.Repeat("x", maxCachedUserAgentLen)
+	ua := sampleUserAgents[0] + strings.Repeat("x", 64*1024)
 
 	s.False(d.isBot(ua))
-	s.Equal(0, d.verdicts.len())
+	s.Equal(1, d.verdicts.len())
+
+	_, ok := d.verdicts.get(ua[:maxClassifiedUserAgentLen])
+	s.True(ok)
+}
+
+// Test_LongBrowserUserAgentIsNotBot verifies that a huge user agent from a
+// real browser is classified on its first bytes, quickly, and not as a bot.
+func (s *BotVerdictCacheSuite) Test_LongBrowserUserAgentIsNotBot() {
+	d := newBotDetector()
+	ua := sampleUserAgents[0] + strings.Repeat("a", 64*1024)
+
+	start := time.Now()
+
+	s.False(d.isBot(ua))
+	s.Less(time.Since(start), 200*time.Millisecond)
+}
+
+func (s *BotVerdictCacheSuite) Test_LongBotUserAgentIsBot() {
+	d := newBotDetector()
+	ua := "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html) " + strings.Repeat("a", 64*1024)
+
+	s.True(d.isBot(ua))
+}
+
+func (s *BotVerdictCacheSuite) Test_TruncateUserAgent_RuneBoundary() {
+	ua := strings.Repeat("a", maxClassifiedUserAgentLen-1) + "é" + strings.Repeat("b", 10)
+	got := truncateUserAgent(ua)
+
+	s.Len(got, maxClassifiedUserAgentLen-1)
+	s.True(utf8.ValidString(got))
+	s.Equal("short", truncateUserAgent("short"))
 }
 
 func (s *BotVerdictCacheSuite) Test_ConcurrentAccess() {
@@ -138,5 +171,19 @@ func BenchmarkIsBot_Cached(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		d.isBot(sampleUserAgents[i%len(sampleUserAgents)])
+	}
+}
+
+// BenchmarkIsBot_LongUserAgent is the cost of a 64KB user agent, of which only
+// the first bytes are classified and then cached.
+func BenchmarkIsBot_LongUserAgent(b *testing.B) {
+	d := newBotDetector()
+	ua := sampleUserAgents[0] + strings.Repeat("a", 64*1024)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		d.isBot(ua)
 	}
 }

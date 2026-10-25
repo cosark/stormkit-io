@@ -15,6 +15,7 @@ type RemoteIPSuite struct {
 
 func (s *RemoteIPSuite) AfterTest(_, _ string) {
 	config.Get().TrustProxyHeaders = false
+	config.Get().TrustedProxies = nil
 }
 
 func (s *RemoteIPSuite) newReq(remoteAddr string, headers map[string]string) *shttp.RequestContext {
@@ -65,7 +66,47 @@ func (s *RemoteIPSuite) Test_RemoteIP_TrustProxy_CommaSeparated() {
 		"X-Forwarded-For": "1.2.3.4, 5.6.7.8, 9.10.11.12",
 	})
 
-	s.Equal("1.2.3.4", req.RemoteIP())
+	s.Equal("9.10.11.12", req.RemoteIP(), "the entry the trusted proxy appended")
+}
+
+// Test_RemoteIP_TrustProxy_SkipsPrivateHops verifies that an internal proxy
+// appending its own private address does not hide the visitor.
+func (s *RemoteIPSuite) Test_RemoteIP_TrustProxy_SkipsPrivateHops() {
+	config.Get().TrustProxyHeaders = true
+
+	req := s.newReq("10.0.0.1:9999", map[string]string{
+		"X-Forwarded-For":  "6.6.6.6, 203.0.113.7, 10.0.0.5",
+		"X-Forwarded-Port": "443",
+	})
+
+	s.Equal("203.0.113.7", req.RemoteIP())
+	s.Equal("443", req.RemotePort())
+}
+
+// Test_RemoteIP_TrustProxy_SkipsTrustedProxies verifies that a public proxy
+// in STORMKIT_TRUSTED_PROXIES (e.g. a CDN in front of the load balancer) is
+// skipped like an internal hop.
+func (s *RemoteIPSuite) Test_RemoteIP_TrustProxy_SkipsTrustedProxies() {
+	config.Get().TrustProxyHeaders = true
+	config.Get().TrustedProxies = config.ParseTrustedProxies("104.16.0.0/13")
+
+	req := s.newReq("10.0.0.1:9999", map[string]string{
+		"X-Forwarded-For": "6.6.6.6, 198.51.100.9, 104.16.0.1",
+	})
+
+	s.Equal("198.51.100.9", req.RemoteIP())
+}
+
+func (s *RemoteIPSuite) Test_RemoteIP_TrustProxy_IPv6WithPort() {
+	config.Get().TrustProxyHeaders = true
+
+	req := s.newReq("10.0.0.1:9999", map[string]string{
+		"X-Forwarded-For":  "2001:db8::1",
+		"X-Forwarded-Port": "443",
+	})
+
+	s.Equal("2001:db8::1", req.RemoteIP())
+	s.Equal("443", req.RemotePort())
 }
 
 func (s *RemoteIPSuite) Test_RemoteIP_TrustProxy_NoProxyHeaders() {

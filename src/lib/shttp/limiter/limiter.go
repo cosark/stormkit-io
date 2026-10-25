@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stormkit-io/stormkit-io/src/lib/config"
+	"github.com/stormkit-io/stormkit-io/src/lib/utils"
 )
 
 // Options represents the rate limit options.
@@ -37,11 +38,23 @@ func IP(r *http.Request) string {
 	}
 
 	if config.Get().TrustProxyHeaders {
-		if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
+		trusted := config.Get().TrustedProxies
+
+		forwardedFor := utils.ForwardedClientIP(utils.ForwardedClientIPParams{
+			Header:         r.Header.Get("X-Forwarded-For"),
+			TrustedProxies: trusted,
+		})
+
+		if forwardedFor != "" {
 			return forwardedFor
 		}
 
-		if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		realIP := utils.ForwardedClientIP(utils.ForwardedClientIPParams{
+			Header:         r.Header.Get("X-Real-IP"),
+			TrustedProxies: trusted,
+		})
+
+		if realIP != "" {
 			return realIP
 		}
 	}
