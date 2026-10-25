@@ -4,6 +4,15 @@
 
 [compare changes](https://github.com/stormkit-io/stormkit-io/compare/v2026.10.23.1...v2026.10.25.1)
 
+### ⚠️ Upgrade notes
+
+- **Analytics history starts now.** Channels, entry pages, campaigns, per-path visitors and time on page are collected from this release on; older days are not backfilled. The old referrers table is removed, so referrer history before this release is gone.
+- **Visitor counts on upgrade day.** The visitor id now rotates daily, so visitors seen before and after the upgrade on the same day are counted twice that day.
+- **Tag managers.** If the analytics script is injected at runtime (for example through a tag manager), the landing page can be counted twice. Add the script directly to the page to avoid it.
+- **Client IP from X-Forwarded-For.** With `STORMKIT_TRUST_PROXY_HEADERS` enabled, the client IP is now the right-most address that is not an internal hop or a trusted proxy, instead of the left-most one, so it can no longer be spoofed. If you run two public proxies in a row (for example Cloudflare in front of a load balancer), set `STORMKIT_TRUSTED_PROXIES` to the outer proxy's ranges, or have the inner proxy overwrite the header. Otherwise every visitor resolves to the outer proxy's IP.
+- **Auth Wall backup.** Installations upgrading from a version older than v2026.10.22.1 run both Auth Wall migrations in one start, and the temporary `auth_wall_backup` table is created and dropped in the same run. Back up the `auth_wall` table before upgrading if you want a restore point.
+- **Admin access logs** now ask you to pick an app before searching, and searches are limited to 10 seconds.
+
 ### 🚀 Enhancements
 
 - Add per-path and campaign analytics rollups ([#626](https://github.com/stormkit-io/stormkit-io/pull/626))
