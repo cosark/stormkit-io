@@ -14,7 +14,18 @@ import Events from "./Events";
 import TopReferrers from "./TopReferrers";
 import TopPaths from "./TopPaths";
 import ByCountries from "./Countries";
+import Channels from "./Channels";
+import EntryPages from "./EntryPages";
+import Campaigns from "./Campaigns";
 import { RootContext } from "~/pages/Root.context";
+
+// rowSx lays two report cards side by side on wide screens.
+const rowSx = {
+  mt: 2,
+  display: "flex",
+  flexDirection: { xs: "column", md: "row" },
+  gap: 2,
+} as const;
 
 export default function Analytics() {
   const { details } = useContext(RootContext);
@@ -94,20 +105,20 @@ export default function Analytics() {
         onTimeSpanChange={setTimeSpan}
       />
       <Events domain={domain!} environment={environment} ts={timeSpan} />
-      <Box
-        sx={{
-          mt: 2,
-          display: "flex",
-          flexDirection: { xs: "column", md: "row" },
-          gap: 2,
-        }}
-      >
+      <Box sx={rowSx}>
+        <Channels environment={environment} domain={domain!} ts={timeSpan} />
+        <EntryPages environment={environment} domain={domain!} ts={timeSpan} />
+      </Box>
+      <Box sx={rowSx}>
         <TopReferrers
           environment={environment}
           domain={domain!}
           ts={timeSpan}
         />
         <TopPaths environment={environment} domain={domain!} ts={timeSpan} />
+      </Box>
+      <Box sx={rowSx}>
+        <Campaigns environment={environment} domain={domain!} ts={timeSpan} />
       </Box>
       <ByCountries environment={environment} domain={domain!} ts={timeSpan} />
     </Box>
