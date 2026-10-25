@@ -91,7 +91,7 @@ export function formatDuration(seconds: number): string {
 
 // Change renders the change of a total against the previous period, or nothing
 // when there is nothing to compare with.
-function Change({
+export function Change({
   current,
   previous,
 }: {
