@@ -114,9 +114,34 @@ const normalizePrefix = (value: string) => {
 
 export default function TopPaths({ environment, domain, ts }: Props) {
   const envId = environment.id!;
-  const [requestPath, setRequestPath] = useState("");
   const [prefixInput, setPrefixInput] = useState("");
   const [pathPrefix, setPathPrefix] = useState("");
+
+  // A drill-down belongs to the domain it was opened on, so picking another
+  // domain returns to the list.
+  const [drillDown, setDrillDown] = useState({
+    domainId: domain?.id,
+    path: "",
+  });
+
+  // Reset during render rather than in an effect, so the old drill-down never
+  // renders (and requests) for the new domain, nor returns with the old one.
+  if (drillDown.domainId !== domain?.id) {
+    setDrillDown({ domainId: domain?.id, path: "" });
+  }
+
+  const requestPath = drillDown.domainId === domain?.id ? drillDown.path : "";
+  const setRequestPath = (path: string) =>
+    setDrillDown({ domainId: domain?.id, path });
+
+  const applyPrefix = () => {
+    const prefix = normalizePrefix(prefixInput);
+
+    if (prefix !== pathPrefix) {
+      setPathPrefix(prefix);
+      setRequestPath("");
+    }
+  };
 
   const { report, error, loading } = useFetchAnalyticsReport({
     envId,
@@ -150,11 +175,10 @@ export default function TopPaths({ environment, domain, ts }: Props) {
             onChange={e => setPrefixInput(e.target.value)}
             onKeyDown={e => {
               if (e.key === "Enter") {
-                setPathPrefix(normalizePrefix(prefixInput));
-                setRequestPath("");
+                applyPrefix();
               }
             }}
-            onBlur={() => setPathPrefix(normalizePrefix(prefixInput))}
+            onBlur={applyPrefix}
             sx={{ maxWidth: 160 }}
           />
         }
