@@ -3,9 +3,11 @@ package accesslog
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/stormkit-io/stormkit-io/src/lib/database"
 	"github.com/stormkit-io/stormkit-io/src/lib/types"
@@ -33,6 +35,15 @@ const DefaultLimit = 100
 // what arrives over HTTP only — internal callers set SelectLogsParams.Limit
 // directly and are trusted with it.
 const MaxLimit = 1000
+
+// SelectLogsTimeout bounds how long SelectLogs may run. Without an app or
+// domain filter the query cannot use an index and walks every row in the
+// time window, which on a busy install takes far longer than a request should.
+var SelectLogsTimeout = 10 * time.Second
+
+// ErrQueryTimeout is returned by SelectLogs when the query is cancelled for
+// running longer than SelectLogsTimeout.
+var ErrQueryTimeout = errors.New("access log query timed out")
 
 var stmt = struct {
 	insertLogs string
@@ -157,8 +168,22 @@ type SelectLogsParams struct {
 }
 
 // SelectLogs returns access logs matching the filters, newest first, with one
-// extra row beyond Limit so the caller can detect a next page.
+// extra row beyond Limit so the caller can detect a next page. It returns
+// ErrQueryTimeout when the query runs longer than SelectLogsTimeout.
 func (s *Store) SelectLogs(ctx context.Context, p SelectLogsParams) ([]AccessLog, error) {
+	ctx, cancel := context.WithTimeout(ctx, SelectLogsTimeout)
+	defer cancel()
+
+	logs, err := s.selectLogs(ctx, p)
+
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return nil, ErrQueryTimeout
+	}
+
+	return logs, err
+}
+
+func (s *Store) selectLogs(ctx context.Context, p SelectLogsParams) ([]AccessLog, error) {
 	where := []string{}
 	params := []any{}
 
@@ -281,6 +306,10 @@ func (s *Store) SelectLogs(ctx context.Context, p SelectLogsParams) ([]AccessLog
 		l.Referrer = referrer.ValueOrZero()
 
 		logs = append(logs, l)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return logs, nil

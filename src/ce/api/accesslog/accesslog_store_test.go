@@ -333,6 +333,17 @@ func (s *StoreSuite) Test_InsertLogs_BeyondBindParamLimit() {
 	s.Len(found, rows, "every row in an oversized batch must be written")
 }
 
+func (s *StoreSuite) Test_SelectLogs_Timeout() {
+	defaultTimeout := accesslog.SelectLogsTimeout
+	accesslog.SelectLogsTimeout = time.Nanosecond
+	defer func() { accesslog.SelectLogsTimeout = defaultTimeout }()
+
+	logs, err := accesslog.NewStore().SelectLogs(context.Background(), accesslog.SelectLogsParams{})
+
+	s.ErrorIs(err, accesslog.ErrQueryTimeout)
+	s.Nil(logs)
+}
+
 func TestStore(t *testing.T) {
 	suite.Run(t, &StoreSuite{})
 }

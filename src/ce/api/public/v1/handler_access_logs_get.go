@@ -1,6 +1,7 @@
 package publicapiv1
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/stormkit-io/stormkit-io/src/ce/api/accesslog"
@@ -16,6 +17,12 @@ func handlerAccessLogsGet(req *RequestContext) *shttp.Response {
 	params.EnvID = req.Env.ID
 
 	logs, err := accesslog.NewStore().SelectLogs(req.Context(), params)
+
+	if errors.Is(err, accesslog.ErrQueryTimeout) {
+		return shttp.BadRequest(map[string]any{
+			"error": "The query took too long. Narrow the time range or add more filters.",
+		})
+	}
 
 	if err != nil {
 		return shttp.Error(err)
