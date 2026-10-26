@@ -1,5 +1,68 @@
 # Changelog
 
+## v2026.10.23.1...v2026.10.25.1
+
+[compare changes](https://github.com/stormkit-io/stormkit-io/compare/v2026.10.23.1...v2026.10.25.1)
+
+### ⚠️ Upgrade notes
+
+- **Analytics history starts now.** Channels, entry pages, campaigns, per-path visitors and time on page are collected from this release on; older days are not backfilled. The old referrers table is removed, so referrer history before this release is gone.
+- **Visitor counts on upgrade day.** The visitor id now rotates daily, so visitors seen before and after the upgrade on the same day are counted twice that day.
+- **Tag managers.** If the analytics script is injected at runtime (for example through a tag manager), the landing page can be counted twice. Add the script directly to the page to avoid it.
+- **Client IP from X-Forwarded-For.** With `STORMKIT_TRUST_PROXY_HEADERS` enabled, the client IP is now the right-most address that is not an internal hop or a trusted proxy, instead of the left-most one, so it can no longer be spoofed. If you run two public proxies in a row (for example Cloudflare in front of a load balancer), set `STORMKIT_TRUSTED_PROXIES` to the outer proxy's ranges, or have the inner proxy overwrite the header. Otherwise every visitor resolves to the outer proxy's IP.
+- **Auth Wall backup.** Installations upgrading from a version older than v2026.10.22.1 run both Auth Wall migrations in one start, and the temporary `auth_wall_backup` table is created and dropped in the same run. Back up the `auth_wall` table before upgrading if you want a restore point.
+- **Admin access logs** now ask you to pick an app before searching, and searches are limited to 10 seconds.
+
+### 🚀 Enhancements
+
+- Add per-path and campaign analytics rollups ([#626](https://github.com/stormkit-io/stormkit-io/pull/626))
+- Add analytics read api and mcp tool ([#627](https://github.com/stormkit-io/stormkit-io/pull/627))
+- Add analytics channels and entry pages ([#628](https://github.com/stormkit-io/stormkit-io/pull/628))
+- Add time on page to analytics ([#632](https://github.com/stormkit-io/stormkit-io/pull/632))
+- Move the visitors chart onto the analytics api ([#635](https://github.com/stormkit-io/stormkit-io/pull/635))
+- Move the paths card onto the analytics api ([#636](https://github.com/stormkit-io/stormkit-io/pull/636))
+- Move the referrers card onto the analytics api ([#638](https://github.com/stormkit-io/stormkit-io/pull/638))
+- Move the countries card onto the analytics api ([#640](https://github.com/stormkit-io/stormkit-io/pull/640))
+- Add channels, entry pages and campaigns cards ([#641](https://github.com/stormkit-io/stormkit-io/pull/641))
+
+### 🩹 Fixes
+
+- Count analytics visitors and page views accurately ([#625](https://github.com/stormkit-io/stormkit-io/pull/625))
+- Harden analytics path rollups ([#629](https://github.com/stormkit-io/stormkit-io/pull/629))
+- Fold old analytics rollups into one run ([#631](https://github.com/stormkit-io/stormkit-io/pull/631))
+- Insert analytics events in chunks ([#633](https://github.com/stormkit-io/stormkit-io/pull/633))
+- Keep the countries map inside its card ([#643](https://github.com/stormkit-io/stormkit-io/pull/643))
+- Harden analytics collection ([#647](https://github.com/stormkit-io/stormkit-io/pull/647))
+- Keep analytics cards in sync on domain change ([#646](https://github.com/stormkit-io/stormkit-io/pull/646))
+- Stop master tasks when leadership is lost ([#645](https://github.com/stormkit-io/stormkit-io/pull/645))
+- Avoid migration lock stalls on analytics ([#648](https://github.com/stormkit-io/stormkit-io/pull/648))
+- Step down before the leader key expires ([#650](https://github.com/stormkit-io/stormkit-io/pull/650))
+- Require an app in the access logs viewer ([#651](https://github.com/stormkit-io/stormkit-io/pull/651))
+- Read analytics totals from domain rollups ([#652](https://github.com/stormkit-io/stormkit-io/pull/652))
+
+### 📖 Documentation
+
+- Refresh the analytics feature page ([#634](https://github.com/stormkit-io/stormkit-io/pull/634))
+
+### 🏡 Chore
+
+- Update changelog for v2026.10.23.1 ([#621](https://github.com/stormkit-io/stormkit-io/pull/621))
+- Retire per-environment auth wall logins ([#623](https://github.com/stormkit-io/stormkit-io/pull/623))
+- Drop auth_wall_backup ([#624](https://github.com/stormkit-io/stormkit-io/pull/624))
+- Merge unreleased migrations into 0031 ([#630](https://github.com/stormkit-io/stormkit-io/pull/630))
+- Remove the old analytics dashboard endpoints ([#642](https://github.com/stormkit-io/stormkit-io/pull/642))
+- Remove unused www analytics endpoint ([#644](https://github.com/stormkit-io/stormkit-io/pull/644))
+
+### ✅ Tests
+
+- Fix two flaky tests ([#622](https://github.com/stormkit-io/stormkit-io/pull/622))
+- Stop collect beacons leaking between tests ([#637](https://github.com/stormkit-io/stormkit-io/pull/637))
+- Fix flaky auth wall last-login assertion ([#639](https://github.com/stormkit-io/stormkit-io/pull/639))
+
+### ❤️ Contributors
+
+- Savas Vedova <savas@stormkit.io>
+
 ## v2026.10.22.1...v2026.10.23.1
 
 [compare changes](https://github.com/stormkit-io/stormkit-io/compare/v2026.10.22.1...v2026.10.23.1)
