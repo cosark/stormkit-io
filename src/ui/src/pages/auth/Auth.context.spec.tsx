@@ -38,14 +38,14 @@ describe("pages/auth/Auth.context", () => {
       .get(`/auth/providers`)
       .reply(status, response);
 
-  const createWrapper = () => {
+  const createWrapper = (path = "/apps/1231231?my-query=1") => {
     mockFetchAuthProviders({
       status: 200,
       response: { github: true, gitlab: true, bitbucket: true },
     });
 
     wrapper = renderWithRouter({
-      initialEntries: ["/apps/1231231?my-query=1"],
+      initialEntries: [path],
       el: () => (
         <ContextProvider>
           <AuthContext.Consumer>
@@ -85,7 +85,7 @@ describe("pages/auth/Auth.context", () => {
       await waitFor(() => {
         expect(scope.isDone()).toBe(true);
         expect(global.NavigateMock).toHaveBeenCalledWith(
-          "/auth?redirect=%2Fapps%2F1231231%3Fmy-query%3D1"
+          "/auth?redirect=%2Fapps%2F1231231%3Fmy-query%3D1",
         );
       });
     });
@@ -135,6 +135,7 @@ describe("pages/auth/Auth.context", () => {
           ],
           authError: undefined,
           loginOauth: expect.any(Function),
+          trustedLoginCode: null,
           logout: expect.any(Function),
           reloadTeams: expect.any(Function),
           teams: undefined,
@@ -145,6 +146,54 @@ describe("pages/auth/Auth.context", () => {
           },
         });
       });
+    });
+  });
+
+  describe.each([
+    ["/auth/callback?code=my-code", "/auth/callback"],
+    ["/auth/callback/?code=my-code", "/auth/callback/"],
+  ])("when a logged out user lands on %s", (path, stripped) => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      context = {};
+      createWrapper(path);
+    });
+
+    it("keeps the code and takes it out of the address bar", async () => {
+      await waitFor(() => {
+        expect(context?.providers).toBeDefined();
+      });
+
+      expect(context.trustedLoginCode).toBe("my-code");
+      expect(global.NavigateMock).toHaveBeenCalledTimes(1);
+      expect(global.NavigateMock).toHaveBeenCalledWith(stripped, {
+        replace: true,
+      });
+    });
+  });
+
+  describe("when a page other than the callback has a code", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      context = {};
+      LocalStorage.set("skit_token", "my-valid-token");
+      mockFetchTeam({ response: [] });
+      scope = mockFetchUser({});
+      createWrapper("/apps?code=not-a-login-code");
+    });
+
+    afterEach(() => {
+      LocalStorage.del("skit_token");
+    });
+
+    it("leaves it alone", async () => {
+      await waitFor(() => {
+        expect(scope.isDone()).toBe(true);
+        expect(context?.user).toBeDefined();
+      });
+
+      expect(context.trustedLoginCode).toBeNull();
+      expect(global.NavigateMock).not.toHaveBeenCalled();
     });
   });
 });
