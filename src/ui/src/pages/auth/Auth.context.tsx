@@ -1,6 +1,11 @@
 import type { LoginOauthReturnValue } from "./actions";
 import CircularProgress from "@mui/material/CircularProgress";
-import React, { createContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import * as actions from "./actions";
 import type { Providers } from "./actions";
@@ -24,9 +29,13 @@ export interface AuthContextProps {
   loginOauth?: (p: Provider) => Promise<LoginOauthReturnValue>;
   reloadTeams?: () => void;
   teams?: Team[];
+  trustedLoginCode?: string | null;
 }
 
 export const AuthContext = createContext<AuthContextProps>({});
+
+// Pages that logged out users can open without being sent to /auth.
+const publicPaths = ["/auth", "/auth/callback"];
 
 interface Props {
   children: React.ReactNode;
@@ -44,7 +53,27 @@ export default function ContextProvider({ children }: Props) {
   } = useFetchActiveProviders();
   const { teams, loading: tLoading } = useFetchTeams({ refreshToken, user });
 
-  const shouldRedirect = !loading && !user && pathname !== "/auth";
+  const normalizedPath = pathname.replace(/(.)\/+$/, "$1");
+  const isPublicPath = publicPaths.includes(normalizedPath);
+
+  // The one-time code of a trusted login is kept in memory and taken out of
+  // the address bar in a layout effect. Layout effects run before any
+  // passive effect, so the requests sent on start-up (the API URL lookup,
+  // /user, /auth/providers, /instance) never carry it in their URL or
+  // Referer.
+  const [trustedLoginCode] = useState(() =>
+    normalizedPath === "/auth/callback"
+      ? new URLSearchParams(search).get("code")
+      : null,
+  );
+
+  useLayoutEffect(() => {
+    if (trustedLoginCode) {
+      navigate(pathname, { replace: true });
+    }
+  }, []);
+
+  const shouldRedirect = !loading && !user && !isPublicPath;
 
   useEffect(() => {
     if (shouldRedirect) {
@@ -89,6 +118,7 @@ export default function ContextProvider({ children }: Props) {
         reloadTeams: () => setTeamsRefreshToken(Date.now()),
         logout: logout(), // This function can be removed, it's no longer being injected something.
         loginOauth: loginOauth({ ...fns }),
+        trustedLoginCode,
       }}
     >
       {children}

@@ -65,6 +65,10 @@ const routes: Array<ExtendedRouterProps> = [
     element: Async(() => import("~/pages/auth"), centerLayout),
   },
   {
+    path: "/auth/callback",
+    element: Async(() => import("~/pages/auth/TrustedLogin"), centerLayout),
+  },
+  {
     path: "/logout",
     element: Async(() => import("~/pages/logout")),
   },

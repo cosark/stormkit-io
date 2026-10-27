@@ -84,6 +84,19 @@ export const mockAdminLogin = ({
 }: MockAdminLoginProps) =>
   nock(endpoint).post("/auth/admin/login", payload).reply(status, response);
 
+interface MockTrustedLoginProps {
+  status?: number;
+  code: string;
+  response?: { user?: User; sessionToken?: string };
+}
+
+export const mockTrustedLogin = ({
+  status = 200,
+  code,
+  response,
+}: MockTrustedLoginProps) =>
+  nock(endpoint).post("/auth/trusted", { code }).reply(status, response);
+
 interface MockAdminRegisterProps {
   status?: number;
   payload: { email: string; password: string };
