@@ -253,6 +253,7 @@ test: test-fe test-be
 test-fe:
 	@echo "Running frontend tests..."
 	cd src/ui && npm run test
+	cd src/cloud/manager/ui && npm run typecheck && npm run test
 
 # Test frontend services in watch mode
 test-fe-watch:

@@ -52,6 +52,7 @@ func init() {
 	var stmts = []string{
 		"DROP TABLE IF EXISTS public.migrations;",
 		fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, database.Config.Schema),
+		"DROP SCHEMA IF EXISTS cloud CASCADE",
 	}
 
 	conn := database.NewConnection()

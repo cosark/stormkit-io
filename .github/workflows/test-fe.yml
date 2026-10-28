@@ -31,6 +31,10 @@ jobs:
         working-directory: src/ui
         run: npm install
 
+      - name: Install cloud console dependencies
+        working-directory: src/cloud/manager/ui
+        run: npm install
+
       - name: Run tests
         run: make test-fe
 

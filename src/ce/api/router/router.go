@@ -21,6 +21,7 @@ import (
 	"github.com/stormkit-io/stormkit-io/src/ce/api/user/instancehandlers"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/user/subscriptionhandlers"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/user/userhandlers"
+	"github.com/stormkit-io/stormkit-io/src/cloud/manager/api/managerhandlers"
 	"github.com/stormkit-io/stormkit-io/src/ee/api/analytics/analyticshandlers"
 	"github.com/stormkit-io/stormkit-io/src/ee/api/audit/audithandlers"
 	"github.com/stormkit-io/stormkit-io/src/ee/api/team/teamhandlers"
@@ -67,6 +68,7 @@ func Get() *shttp.Router {
 
 	if config.IsStormkitCloud() || config.IsDevelopment() {
 		r.RegisterService(subscriptionhandlers.Services)
+		r.RegisterService(managerhandlers.Services)
 	}
 
 	if config.IsDevelopment() || config.IsSelfHosted() {

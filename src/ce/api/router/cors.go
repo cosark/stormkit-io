@@ -57,6 +57,7 @@ func Cors() []string {
 			"^https?://app(-*[a-zA-Z0-9]+)?.stormkit.io$",
 			"^https?://app(-*[a-zA-Z0-9]+)?.stormkit.dev$",
 			"^https?://app(-*[a-zA-Z0-9]+)?.stormkit.app$",
+			"^https://console\\.stormkit\\.io$",
 		)
 	}
 
