@@ -157,6 +157,33 @@ func (s *AccountStoreSuite) Test_Sessions() {
 	s.Nil(deleted)
 }
 
+// Test_CreateSession_RemovesExpiredSessions verifies that sessions people
+// never signed out of do not pile up.
+func (s *AccountStoreSuite) Test_CreateSession_RemovesExpiredSessions() {
+	acc := s.signIn(account.SignInParams{Provider: "github", ProviderUserID: "1", Emails: []string{"jane@acme.test"}})
+
+	for _, p := range []account.CreateSessionParams{
+		{AccountID: acc.ID, TokenHash: "expired", ExpiresAt: time.Now().Add(-time.Minute)},
+		{AccountID: acc.ID, TokenHash: "new", ExpiresAt: time.Now().Add(time.Hour)},
+	} {
+		s.Require().NoError(s.store.CreateSession(s.ctx, p))
+	}
+
+	var hashes []string
+	rows, err := s.conn.Query("SELECT token_hash FROM cloud.sessions WHERE account_id = $1", acc.ID)
+	s.Require().NoError(err)
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var hash string
+		s.Require().NoError(rows.Scan(&hash))
+		hashes = append(hashes, hash)
+	}
+
+	s.Equal([]string{"new"}, hashes)
+}
+
 func (s *AccountStoreSuite) Test_AccountByID_Unknown() {
 	acc, err := s.store.AccountByID(s.ctx, 987654)
 

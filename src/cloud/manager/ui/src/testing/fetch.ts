@@ -3,6 +3,7 @@ import { vi } from "vitest";
 interface MockResponse {
   status?: number;
   body?: unknown;
+  delay?: number;
 }
 
 /**
@@ -16,6 +17,10 @@ export function mockFetch(routes: Record<string, MockResponse>) {
 
     if (!route) {
       return new Response("", { status: 404 });
+    }
+
+    if (route.delay) {
+      await new Promise((resolve) => setTimeout(resolve, route.delay));
     }
 
     return new Response(

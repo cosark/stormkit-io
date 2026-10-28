@@ -42,7 +42,7 @@ func (g *GitHubProvider) Identity(ctx context.Context, code string) (*Identity, 
 		AvatarURL string `json:"avatar_url"`
 	}{}
 
-	if err := api.get(ctx, g.APIURL+"/user", &profile); err != nil {
+	if err := api.get(getParams{ctx: ctx, url: g.APIURL + "/user", out: &profile}); err != nil {
 		return nil, err
 	}
 
@@ -51,7 +51,7 @@ func (g *GitHubProvider) Identity(ctx context.Context, code string) (*Identity, 
 		Verified bool   `json:"verified"`
 	}{}
 
-	if err := api.get(ctx, g.APIURL+"/user/emails", &records); err != nil {
+	if err := api.get(getParams{ctx: ctx, url: g.APIURL + "/user/emails", out: &records}); err != nil {
 		return nil, err
 	}
 

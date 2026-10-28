@@ -42,7 +42,7 @@ func (g *GoogleProvider) Identity(ctx context.Context, code string) (*Identity, 
 		EmailVerified bool   `json:"email_verified"`
 	}{}
 
-	if err := api.get(ctx, g.UserInfoURL, &profile); err != nil {
+	if err := api.get(getParams{ctx: ctx, url: g.UserInfoURL, out: &profile}); err != nil {
 		return nil, err
 	}
 

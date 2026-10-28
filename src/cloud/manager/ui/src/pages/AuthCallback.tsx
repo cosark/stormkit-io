@@ -63,9 +63,8 @@ export default function AuthCallback() {
     request<{ token: string; account: Account }>(
       "POST",
       "/cloud/auth/session",
-      {
-        code,
-      },
+      { code },
+      { anonymous: true },
     )
       .then(({ token, account }) => {
         signIn(token, account);

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/lib/pq"
@@ -11,22 +12,41 @@ import (
 	"github.com/stormkit-io/stormkit-io/src/lib/types"
 )
 
+const selectAccount = `
+	SELECT
+		a.account_id,
+		a.display_name,
+		a.avatar_url,
+		a.created_at,
+		COALESCE(
+			(SELECT array_agg(e.email ORDER BY e.email_id) FROM cloud.account_emails e WHERE e.account_id = a.account_id),
+			'{}'
+		)
+	FROM cloud.accounts a
+`
+
 var stmt = struct {
-	identityAccount  string
-	emailAccounts    string
-	insertAccount    string
-	insertIdentity   string
-	insertEmails     string
-	updateLastLogin  string
-	selectAccount    string
-	insertSession    string
-	sessionAccountID string
-	deleteSession    string
+	identityAccount       string
+	lockEmail             string
+	emailAccounts         string
+	insertAccount         string
+	insertIdentity        string
+	insertEmails          string
+	updateLastLogin       string
+	selectAccount         string
+	insertSession         string
+	sessionAccount        string
+	deleteExpiredSessions string
+	deleteSession         string
 }{
 	identityAccount: `
 		SELECT account_id FROM cloud.account_identities
 		WHERE provider = $1 AND provider_user_id = $2;
 	`,
+
+	// Serializes the first sign-ins that share an email, so they cannot each
+	// create an account for it.
+	lockEmail: `SELECT pg_advisory_xact_lock(hashtext('cloud.account_emails:' || $1));`,
 
 	emailAccounts: `
 		SELECT DISTINCT account_id FROM cloud.account_emails
@@ -59,28 +79,21 @@ var stmt = struct {
 		WHERE account_id = $1;
 	`,
 
-	selectAccount: `
-		SELECT
-			a.account_id,
-			a.display_name,
-			a.avatar_url,
-			a.created_at,
-			COALESCE(
-				(SELECT array_agg(e.email ORDER BY e.email_id) FROM cloud.account_emails e WHERE e.account_id = a.account_id),
-				'{}'
-			)
-		FROM cloud.accounts a
-		WHERE a.account_id = $1;
-	`,
+	selectAccount: selectAccount + `WHERE a.account_id = $1;`,
 
 	insertSession: `
 		INSERT INTO cloud.sessions (account_id, token_hash, expires_at)
 		VALUES ($1, $2, $3);
 	`,
 
-	sessionAccountID: `
-		SELECT account_id FROM cloud.sessions
-		WHERE token_hash = $1 AND expires_at > (now() AT TIME ZONE 'UTC');
+	sessionAccount: selectAccount + `
+		JOIN cloud.sessions s ON s.account_id = a.account_id
+		WHERE s.token_hash = $1 AND s.expires_at > (now() AT TIME ZONE 'UTC');
+	`,
+
+	deleteExpiredSessions: `
+		DELETE FROM cloud.sessions
+		WHERE account_id = $1 AND expires_at <= (now() AT TIME ZONE 'UTC');
 	`,
 
 	deleteSession: `
@@ -115,6 +128,18 @@ type SignInParams struct {
 // the same account. It returns ErrAmbiguousEmail when those emails belong to
 // more than one account.
 func (s *Store) SignIn(ctx context.Context, p SignInParams) (*Account, error) {
+	acc, err := s.signIn(ctx, p)
+
+	// Two first sign-ins of the same person raced, and the other one created
+	// the account or identity. Signing in again finds it.
+	if database.IsDuplicate(err) {
+		return s.signIn(ctx, p)
+	}
+
+	return acc, err
+}
+
+func (s *Store) signIn(ctx context.Context, p SignInParams) (*Account, error) {
 	tx, err := s.Conn.BeginTx(ctx, nil)
 
 	if err != nil {
@@ -160,6 +185,16 @@ type linkIdentityParams struct {
 // linkIdentity attaches a new identity to the account owning its emails, or
 // to a new account when no account owns them.
 func (s *Store) linkIdentity(ctx context.Context, p linkIdentityParams) (types.ID, error) {
+	emails := slices.Clone(p.signIn.Emails)
+	slices.Sort(emails)
+
+	// Locks are taken in a fixed order so two sign-ins cannot deadlock.
+	for _, email := range emails {
+		if _, err := p.tx.ExecContext(ctx, stmt.lockEmail, email); err != nil {
+			return 0, err
+		}
+	}
+
 	rows, err := p.tx.QueryContext(ctx, stmt.emailAccounts, pq.Array(p.signIn.Emails))
 
 	if err != nil {
@@ -210,7 +245,17 @@ func (s *Store) linkIdentity(ctx context.Context, p linkIdentityParams) (types.I
 
 // AccountByID returns the account with the given ID, or nil when there is none.
 func (s *Store) AccountByID(ctx context.Context, id types.ID) (*Account, error) {
-	row, err := s.QueryRow(ctx, stmt.selectAccount, id)
+	return s.selectAccount(selectAccountParams{ctx: ctx, query: stmt.selectAccount, arg: id})
+}
+
+type selectAccountParams struct {
+	ctx   context.Context
+	query string
+	arg   any
+}
+
+func (s *Store) selectAccount(p selectAccountParams) (*Account, error) {
+	row, err := s.QueryRow(p.ctx, p.query, p.arg)
 
 	if err != nil {
 		return nil, err
@@ -239,8 +284,13 @@ type CreateSessionParams struct {
 	ExpiresAt time.Time
 }
 
-// CreateSession stores a session under the hash of its bearer token.
+// CreateSession stores a session under the hash of its bearer token. It also
+// removes the account's expired sessions, so they do not pile up.
 func (s *Store) CreateSession(ctx context.Context, p CreateSessionParams) error {
+	if _, err := s.Exec(ctx, stmt.deleteExpiredSessions, p.AccountID); err != nil {
+		return err
+	}
+
 	_, err := s.Exec(ctx, stmt.insertSession, p.AccountID, p.TokenHash, p.ExpiresAt.UTC())
 	return err
 }
@@ -248,23 +298,7 @@ func (s *Store) CreateSession(ctx context.Context, p CreateSessionParams) error 
 // SessionAccount returns the account of an unexpired session, or nil when no
 // such session exists.
 func (s *Store) SessionAccount(ctx context.Context, tokenHash string) (*Account, error) {
-	row, err := s.QueryRow(ctx, stmt.sessionAccountID, tokenHash)
-
-	if err != nil {
-		return nil, err
-	}
-
-	var accountID types.ID
-
-	if err := row.Scan(&accountID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-
-		return nil, err
-	}
-
-	return s.AccountByID(ctx, accountID)
+	return s.selectAccount(selectAccountParams{ctx: ctx, query: stmt.sessionAccount, arg: tokenHash})
 }
 
 // DeleteSession ends a session. Ending one that does not exist is not an error.

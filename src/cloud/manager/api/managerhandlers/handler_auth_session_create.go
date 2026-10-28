@@ -23,7 +23,7 @@ func handlerAuthSessionCreate(req *shttp.RequestContext) *shttp.Response {
 		return shttp.BadRequest(map[string]any{"error": "A login code is required"})
 	}
 
-	accountID, err := loginCodes{}.redeem(req.Context(), strings.TrimSpace(data.Code))
+	accountID, err := loginCodes{}.redeem(redeemLoginCodeParams{ctx: req.Context(), code: strings.TrimSpace(data.Code)})
 
 	if err != nil {
 		return shttp.Error(err)
@@ -44,7 +44,13 @@ func handlerAuthSessionCreate(req *shttp.RequestContext) *shttp.Response {
 		return shttp.NotAllowed()
 	}
 
-	token := sessionTokenPrefix + secrets{}.random()
+	random, err := secrets{}.random()
+
+	if err != nil {
+		return shttp.Error(err)
+	}
+
+	token := sessionTokenPrefix + random
 	expiresAt := time.Now().Add(SessionTTL)
 
 	err = store.CreateSession(req.Context(), account.CreateSessionParams{

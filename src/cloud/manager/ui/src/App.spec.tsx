@@ -63,6 +63,50 @@ describe("App", () => {
     expect(localStorage.getItem("skc_session")).toBeNull();
   });
 
+  // A browser holding an expired session completes a new sign-in. The old
+  // session's 401 arrives last and must not undo the new sign-in.
+  it("keeps a new sign-in when the old session's 401 arrives late", async () => {
+    localStorage.setItem("skc_session", "skc_expired");
+    mockFetch({
+      "GET /cloud/account": { status: 401, delay: 50 },
+      "POST /cloud/auth/session": {
+        body: { token: "skc_new", account: mockAccount },
+      },
+    });
+
+    const wrapper = renderApp("/auth/callback?code=my-code");
+
+    await waitFor(() => {
+      expect(wrapper.getByText("Your instances")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(wrapper.getByText("Your instances")).toBeTruthy();
+    expect(localStorage.getItem("skc_session")).toBe("skc_new");
+  });
+
+  // Reopening a used sign-in link must not sign out a working session.
+  it("keeps the session when a used sign-in link is reopened", async () => {
+    localStorage.setItem("skc_session", "skc_token");
+    const fetch = mockFetch({
+      "GET /cloud/account": { body: { account: mockAccount } },
+      "POST /cloud/auth/session": { status: 401 },
+    });
+
+    const wrapper = renderApp("/auth/callback?code=used-code");
+
+    await waitFor(() => {
+      expect(wrapper.getByText(/expired or was used already/)).toBeTruthy();
+    });
+
+    const post = fetch.mock.calls.find(([, init]) => init?.method === "POST");
+    const headers = post?.[1]?.headers as Record<string, string>;
+
+    expect(headers.Authorization).toBeUndefined();
+    expect(localStorage.getItem("skc_session")).toBe("skc_token");
+  });
+
   it("signs out", async () => {
     localStorage.setItem("skc_session", "skc_token");
     const fetch = mockFetch({

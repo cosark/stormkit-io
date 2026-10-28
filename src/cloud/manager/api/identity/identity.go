@@ -99,8 +99,14 @@ type apiClient struct {
 	client *http.Client
 }
 
-func (c apiClient) get(ctx context.Context, url string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+type getParams struct {
+	ctx context.Context
+	url string
+	out any
+}
+
+func (c apiClient) get(p getParams) error {
+	req, err := http.NewRequestWithContext(p.ctx, http.MethodGet, p.url, nil)
 
 	if err != nil {
 		return err
@@ -117,10 +123,10 @@ func (c apiClient) get(ctx context.Context, url string, out any) error {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s returned %d", url, res.StatusCode)
+		return fmt.Errorf("GET %s returned %d", p.url, res.StatusCode)
 	}
 
-	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
+	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(p.out)
 }
 
 // emailSet collects verified emails, lowercased and without duplicates.
@@ -132,9 +138,11 @@ type emailSet struct {
 func (e *emailSet) add(email string) {
 	email = strings.ToLower(strings.TrimSpace(email))
 
+	_, domain, ok := strings.Cut(email, "@")
+
 	// Relay addresses such as <id>@users.noreply.github.com cannot receive
 	// mail and say nothing about who owns an account.
-	if email == "" || strings.Contains(email, "noreply") || strings.Contains(email, "no-reply") {
+	if !ok || strings.HasPrefix(domain, "users.noreply.") {
 		return
 	}
 

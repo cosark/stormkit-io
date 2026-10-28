@@ -60,6 +60,7 @@ func (s *IdentitySuite) Test_GitHub_KeepsOnlyVerifiedEmails() {
 		{"email": "Jane@Acme.test", "verified": true, "primary": true},
 		{"email": "jane@unverified.test", "verified": false},
 		{"email": "42+jane@users.noreply.github.com", "verified": true},
+		{"email": "Ops@No-Reply-Labs.test", "verified": true},
 	}
 
 	github := identity.NewGitHub(s.config())
@@ -74,7 +75,7 @@ func (s *IdentitySuite) Test_GitHub_KeepsOnlyVerifiedEmails() {
 		ProviderUserID: "42",
 		DisplayName:    "jane",
 		AvatarURL:      "https://avatars.test/jane",
-		Emails:         []string{"jane@acme.test"},
+		Emails:         []string{"jane@acme.test", "ops@no-reply-labs.test"},
 	}, ident)
 }
 

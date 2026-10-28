@@ -21,13 +21,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(() => session.token() !== null);
 
   useEffect(() => {
-    if (!session.token()) {
+    const token = session.token();
+
+    if (!token) {
       return;
     }
 
+    // A sign-in that completes meanwhile wins over this stored session.
+    const isCurrent = () => session.token() === token;
+
     request<{ account: Account }>("GET", "/cloud/account")
-      .then(({ account }) => setAccount(account))
-      .catch(() => setAccount(undefined))
+      .then(({ account }) => isCurrent() && setAccount(account))
+      .catch(() => isCurrent() && setAccount(undefined))
       .finally(() => setLoading(false));
   }, []);
 

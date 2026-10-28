@@ -33,7 +33,7 @@ func handlerAuthCallback(req *shttp.RequestContext) *shttp.Response {
 
 	query := req.Query()
 
-	if !(stateCookie{}).matches(req, name, query.Get("state")) {
+	if !(stateCookie{}).matches(matchesStateParams{req: req, provider: name, state: query.Get("state")}) {
 		return callbackRedirect(url.Values{"error": {callbackErrorState}})
 	}
 
@@ -70,7 +70,7 @@ func handlerAuthCallback(req *shttp.RequestContext) *shttp.Response {
 		return callbackRedirect(url.Values{"error": {callbackErrorServer}})
 	}
 
-	code, err := loginCodes{}.issue(req.Context(), acc.ID)
+	code, err := loginCodes{}.issue(issueLoginCodeParams{ctx: req.Context(), accountID: acc.ID})
 
 	if err != nil {
 		slog.Errorf("cloud sign-in: cannot issue a login code: %s", err.Error())

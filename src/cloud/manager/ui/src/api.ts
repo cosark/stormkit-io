@@ -39,17 +39,25 @@ export class ApiError extends Error {
   }
 }
 
+interface RequestOptions {
+  // anonymous requests carry no session token, so their 401s say nothing
+  // about the stored session.
+  anonymous?: boolean;
+}
+
 /**
  * request calls the instance manager API with the session token, if any.
- * A 401 clears the stored session, since the token no longer works.
+ * A 401 clears the stored session, unless a newer sign-in replaced the
+ * token while the request was in flight.
  */
 export async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  options: RequestOptions = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
-  const token = session.token();
+  const token = options.anonymous ? null : session.token();
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -71,7 +79,7 @@ export async function request<T>(
     throw new ApiError(0);
   }
 
-  if (res.status === 401) {
+  if (res.status === 401 && token && session.token() === token) {
     session.clear();
   }
 

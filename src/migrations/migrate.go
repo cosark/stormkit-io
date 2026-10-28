@@ -23,7 +23,9 @@ var migrations embed.FS
 //go:embed seed_*.sql
 var seed embed.FS
 
-var CloudMigrations = config.IsStormkitCloud()
+// CloudMigrations runs the .cloud files too. Development builds run them
+// because they serve the Stormkit Cloud console's endpoints.
+var CloudMigrations = config.IsStormkitCloud() || config.IsDevelopment()
 
 // Migrate applies the migration files newer than currentVersion and returns
 // the latest applied version. The version is saved to public.migrations after

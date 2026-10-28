@@ -19,27 +19,37 @@ func handlerAuthLogin(req *shttp.RequestContext) *shttp.Response {
 		return shttp.NotFound()
 	}
 
-	state := secrets{}.random()
+	state, err := secrets{}.random()
+
+	if err != nil {
+		return shttp.Error(err)
+	}
+
 	url := provider.AuthCodeURL(state)
 
 	return &shttp.Response{
 		Status:   http.StatusFound,
 		Redirect: &url,
-		Cookies:  []http.Cookie{stateCookie{}.set(name, state)},
+		Cookies:  []http.Cookie{stateCookie{}.set(stateCookieParams{provider: name, state: state})},
 	}
 }
 
 // stateCookie binds an OAuth state to the browser that started the sign-in.
 type stateCookie struct{}
 
-func (stateCookie) value(provider, state string) string {
-	return provider + "." + state
+type stateCookieParams struct {
+	provider string
+	state    string
 }
 
-func (sc stateCookie) set(provider, state string) http.Cookie {
+func (stateCookie) value(p stateCookieParams) string {
+	return p.provider + "." + p.state
+}
+
+func (sc stateCookie) set(p stateCookieParams) http.Cookie {
 	return http.Cookie{
 		Name:     stateCookieName,
-		Value:    sc.value(provider, state),
+		Value:    sc.value(p),
 		Path:     "/cloud/auth",
 		MaxAge:   int(stateCookieTTL.Seconds()),
 		HttpOnly: true,
@@ -49,20 +59,28 @@ func (sc stateCookie) set(provider, state string) http.Cookie {
 }
 
 func (sc stateCookie) clear() http.Cookie {
-	cookie := sc.set("", "")
+	cookie := sc.set(stateCookieParams{})
 	cookie.Value = ""
 	cookie.MaxAge = -1
 
 	return cookie
 }
 
-// matches reports whether the request carries the cookie of this state.
-func (sc stateCookie) matches(req *shttp.RequestContext, provider, state string) bool {
-	cookie, err := req.Cookie(stateCookieName)
+type matchesStateParams struct {
+	req      *shttp.RequestContext
+	provider string
+	state    string
+}
 
-	if err != nil || state == "" {
+// matches reports whether the request carries the cookie of this state.
+func (sc stateCookie) matches(p matchesStateParams) bool {
+	cookie, err := p.req.Cookie(stateCookieName)
+
+	if err != nil || p.state == "" {
 		return false
 	}
 
-	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(sc.value(provider, state))) == 1
+	expected := sc.value(stateCookieParams{provider: p.provider, state: p.state})
+
+	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(expected)) == 1
 }

@@ -2,9 +2,7 @@ package managerhandlers
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -62,13 +60,8 @@ func consoleURL() string {
 type secrets struct{}
 
 // random returns 32 random bytes, base64url-encoded.
-func (secrets) random() string {
-	b := make([]byte, 32)
-
-	// crypto/rand.Read never returns an error since Go 1.24.
-	_, _ = rand.Read(b)
-
-	return base64.RawURLEncoding.EncodeToString(b)
+func (secrets) random() (string, error) {
+	return utils.SecureRandomToken(32)
 }
 
 // hash returns the hex SHA-256 of a token, which is what gets stored.
@@ -89,39 +82,53 @@ func (loginCodes) key(code string) string {
 	return "cloud:login-code:" + secrets{}.hash(code)
 }
 
+type issueLoginCodeParams struct {
+	ctx       context.Context
+	accountID types.ID
+}
+
 // issue stores a new code for the account and returns it.
-func (lc loginCodes) issue(ctx context.Context, accountID types.ID) (string, error) {
+func (lc loginCodes) issue(p issueLoginCodeParams) (string, error) {
 	client := rediscache.Client()
 
 	if client == nil {
 		return "", errNoRedis
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, redisTimeout)
+	code, err := secrets{}.random()
+
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(p.ctx, redisTimeout)
 	defer cancel()
 
-	code := secrets{}.random()
-
-	if err := client.Set(ctx, lc.key(code), accountID.String(), LoginCodeTTL).Err(); err != nil {
+	if err := client.Set(ctx, lc.key(code), p.accountID.String(), LoginCodeTTL).Err(); err != nil {
 		return "", err
 	}
 
 	return code, nil
 }
 
+type redeemLoginCodeParams struct {
+	ctx  context.Context
+	code string
+}
+
 // redeem spends a code and returns its account, or 0 when the code is
 // unknown, expired or already spent.
-func (lc loginCodes) redeem(ctx context.Context, code string) (types.ID, error) {
+func (lc loginCodes) redeem(p redeemLoginCodeParams) (types.ID, error) {
 	client := rediscache.Client()
 
 	if client == nil {
 		return 0, errNoRedis
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, redisTimeout)
+	ctx, cancel := context.WithTimeout(p.ctx, redisTimeout)
 	defer cancel()
 
-	value, err := client.GetDel(ctx, lc.key(code)).Result()
+	value, err := client.GetDel(ctx, lc.key(p.code)).Result()
 
 	if errors.Is(err, redis.Nil) {
 		return 0, nil

@@ -44,7 +44,7 @@ func (g *GitLabProvider) Identity(ctx context.Context, code string) (*Identity, 
 		ConfirmedAt *string `json:"confirmed_at"`
 	}{}
 
-	if err := api.get(ctx, g.APIURL+"/user", &profile); err != nil {
+	if err := api.get(getParams{ctx: ctx, url: g.APIURL + "/user", out: &profile}); err != nil {
 		return nil, err
 	}
 
@@ -54,7 +54,7 @@ func (g *GitLabProvider) Identity(ctx context.Context, code string) (*Identity, 
 		ConfirmedAt *string `json:"confirmed_at"`
 	}{}
 
-	if err := api.get(ctx, g.APIURL+"/user/emails", &records); err != nil {
+	if err := api.get(getParams{ctx: ctx, url: g.APIURL + "/user/emails", out: &records}); err != nil {
 		return nil, err
 	}
 
