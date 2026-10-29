@@ -175,7 +175,7 @@ func (s *WithSKAuthOAuthSuite) Test_Callback_GitHub_Success() {
 
 // Test_Callback_GitLab_Success verifies that GitLab is accepted as an OAuth
 // provider on the callback, and that its expiring token is stored with its
-// expiry.
+// expiry and refresh token.
 func (s *WithSKAuthOAuthSuite) Test_Callback_GitLab_Success() {
 	host := s.setupCallbackEnv(false)
 
@@ -185,7 +185,7 @@ func (s *WithSKAuthOAuthSuite) Test_Callback_GitLab_Success() {
 		Provider: &skauth.Provider{Name: skauth.ProviderGitLab, Status: true},
 	}))
 
-	token := &oauth2.Token{AccessToken: "gitlab-access-token", Expiry: time.Now().Add(2 * time.Hour)}
+	token := &oauth2.Token{AccessToken: "gitlab-access-token", RefreshToken: "gitlab-refresh-token", Expiry: time.Now().Add(2 * time.Hour)}
 
 	s.mockClient.On("Exchange", mock.Anything, mock.Anything).Return(token, nil).Once()
 	s.mockClient.On("UserInfo", mock.Anything, token).Return(&skauth.UserInfo{
@@ -212,9 +212,11 @@ func (s *WithSKAuthOAuthSuite) Test_Callback_GitLab_Success() {
 	s.Equal(buildconf.SessionCookieName, res.Cookies[0].Name)
 
 	var expiry sql.NullTime
-	err = s.conn.QueryRow("SELECT expiry FROM stormkit_auth_providers WHERE provider_name = 'gitlab' AND account_id = '1234567'").Scan(&expiry)
+	var refreshToken sql.NullString
+	err = s.conn.QueryRow("SELECT expiry, refresh_token FROM stormkit_auth_providers WHERE provider_name = 'gitlab' AND account_id = '1234567'").Scan(&expiry, &refreshToken)
 	s.Require().NoError(err)
 	s.True(expiry.Valid)
+	s.NotEmpty(refreshToken.String)
 }
 
 // Test_Callback_UnverifiedEmail_RedirectsWithError checks that a provider which
@@ -471,6 +473,30 @@ func (s *WithSKAuthOAuthSuite) Test_Callback_ProviderDenied_RedirectsWithError()
 	s.Require().NotNil(res.Redirect)
 	s.Contains(*res.Redirect, "https://app.example.com/dashboard?login_error=")
 	s.Contains(*res.Redirect, "cancelled")
+}
+
+// Test_Callback_ProviderMisconfigured_RedirectsWithError checks that a provider
+// error other than a denied consent, such as a GitLab app missing scopes, is
+// not reported to the visitor as a cancellation.
+func (s *WithSKAuthOAuthSuite) Test_Callback_ProviderMisconfigured_RedirectsWithError() {
+	host := s.setupCallbackEnv(true)
+
+	state := s.stateToken(skauth.ProviderGitLab, "https://app.example.com/login")
+
+	res, err := hosting.ServeAuth(s.oauthRequest(
+		host,
+		fmt.Sprintf("/_stormkit/auth/callback?state=%s&error=invalid_scope&error_description=missing+openid", state),
+		nil,
+	))
+
+	s.Require().NoError(err)
+	s.Require().NotNil(res)
+	s.Equal(http.StatusFound, res.Status)
+	s.Require().NotNil(res.Redirect)
+
+	redirect, err := url.Parse(*res.Redirect)
+	s.Require().NoError(err)
+	s.Contains(redirect.Query().Get("login_error"), "not set up correctly")
 }
 
 // Test_Callback_ExchangeFails_RedirectsWithError checks that a failed token

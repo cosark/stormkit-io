@@ -80,7 +80,8 @@ func (g *GitLabClient) UserInfo(ctx context.Context, token *oauth2.Token) (*User
 
 	defer resp.Body.Close()
 
-	// An application created without the openid scope answers 403 here.
+	// GitLab usually refuses missing scopes on its consent page already; a
+	// token that lacks them is refused here.
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gitlab: GET /oauth/userinfo returned %d (the application needs the openid, profile and email scopes)", resp.StatusCode)
 	}

@@ -164,11 +164,17 @@ func (m *skAuthMiddleware) handleOAuthCallback() (*shttp.Response, error) {
 		return m.loginErrorRedirect(referOrigin, message)
 	}
 
-	// The provider round-trips an `error` param (e.g. the user denied access)
-	// instead of an authorization code. Bounce back without attempting an
-	// exchange that would fail anyway.
-	if req.FormValue("error") != "" {
-		return fail("Sign-in was cancelled."), nil
+	// The provider round-trips an `error` param instead of an authorization
+	// code. Bounce back without attempting an exchange that would fail anyway.
+	if providerErr := req.FormValue("error"); providerErr != "" {
+		if providerErr == "access_denied" {
+			return fail("Sign-in was cancelled."), nil
+		}
+
+		// Anything else, such as GitLab's invalid_scope, means the provider app
+		// is misconfigured. Only the site owner can fix it, so log the reason.
+		slog.Errorf("oauth callback: provider %s returned %q for env %d: %q", provider, providerErr, env.ID, req.FormValue("error_description"))
+		return fail("This sign-in method is not set up correctly. Please contact the site owner."), nil
 	}
 
 	prv, err := skauth.NewStore().Provider(req.Context(), env.ID, provider)
