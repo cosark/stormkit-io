@@ -20,7 +20,7 @@ per branch, custom domains with automatic TLS.
 | **Deployments** | Git push, UI, zip upload or API. A [preview URL per branch](https://www.stormkit.io/docs/deployments/auto-deployments), [environments](https://www.stormkit.io/docs/features/multiple-environments) with their own config, [status checks](https://www.stormkit.io/docs/deployments/status-checks) before publishing |
 | **Any language** | Runtimes come from [mise](https://mise.jdx.dev) — Node.js, Go, Python, Ruby and anything else it supports. System packages from a `flake.nix`. A [start command](https://www.stormkit.io/docs/deployments/application-runtime) runs a long-lived server in any language |
 | **Database** | [PostgreSQL](https://www.stormkit.io/docs/features/database) attached to an environment, with migrations run on deploy |
-| **Authentication** | [Stormkit Auth](https://www.stormkit.io/docs/features/authentication) for your end users — email and password, magic links, Google and X — with sessions handled for you |
+| **Authentication** | [Stormkit Auth](https://www.stormkit.io/docs/features/authentication) for your end users — email and password, magic links, Google, X, GitHub and GitLab — with sessions handled for you |
 | **Email** | A [transactional mailer](https://www.stormkit.io/docs/features/mailer) wired to your SMTP provider |
 | **Scheduled jobs** | [Periodic triggers](https://www.stormkit.io/docs/features/periodic-triggers), without a separate cron box |
 | **Analytics** | [Server-side analytics](https://www.stormkit.io/docs/features/analytics) that do not depend on client-side tracking |
