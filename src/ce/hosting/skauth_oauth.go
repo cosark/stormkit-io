@@ -21,6 +21,7 @@ var oauthProviders = map[string]bool{
 	skauth.ProviderGoogle: true,
 	skauth.ProviderX:      true,
 	skauth.ProviderGitHub: true,
+	skauth.ProviderGitLab: true,
 }
 
 // handleOAuthInitiate starts the OAuth2 authorization flow for providerName.

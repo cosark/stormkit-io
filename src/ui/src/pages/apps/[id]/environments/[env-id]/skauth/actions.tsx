@@ -4,6 +4,7 @@ import GoogleIcon from "@mui/icons-material/Google";
 import GitHubIcon from "@mui/icons-material/GitHub";
 import EmailIcon from "@mui/icons-material/Email";
 import LinkIcon from "@mui/icons-material/Link";
+import { createSvgIcon } from "@mui/material/utils";
 import MuiLink from "@mui/material/Link";
 import api from "~/utils/api/Api";
 
@@ -57,6 +58,16 @@ export const formatDuration = (minutes: number): string => {
   return `${minutes}min`;
 };
 
+// MUI has no GitLab icon. This is the GitLab logo, centred in MUI's 24px
+// viewBox.
+const GitLabIcon = createSvgIcon(
+  <path
+    transform="translate(2 2.4)"
+    d="M0.332907 7.6242L0.361023 7.55235L3.08318 0.448077C3.13856 0.308837 3.23663 0.19072 3.36331 0.110672C3.49007 0.0319836 3.63792 -0.00591509 3.7869 0.00209265C3.93588 0.0101004 4.07882 0.0636289 4.19641 0.155451C4.3127 0.249909 4.39706 0.377903 4.43801 0.522015L6.27604 6.14545H13.7188L15.5568 0.522015C15.5966 0.377118 15.6812 0.248482 15.7984 0.154409C15.916 0.0625873 16.0589 0.00905878 16.2079 0.00105105C16.3569 -0.00695668 16.5047 0.030942 16.6315 0.10963C16.7579 0.190001 16.8559 0.308016 16.9116 0.447036L19.639 7.54818L19.6661 7.62004C20.0579 8.64392 20.1063 9.76746 19.8039 10.8212C19.5015 11.875 18.8646 12.8019 17.9894 13.4622L17.9801 13.4694L17.9551 13.4871L13.8083 16.5925L11.7568 18.1452L10.5072 19.0887C10.361 19.1997 10.1825 19.2598 9.99896 19.2598C9.81543 19.2598 9.63694 19.1997 9.49077 19.0887L8.24112 18.1452L6.18961 16.5925L2.01785 13.4684L2.00744 13.4601C1.13421 12.7997 0.498874 11.8738 0.196913 10.8214C-0.105048 9.76905 -0.0573244 8.64712 0.332907 7.6242V7.6242Z"
+  />,
+  "GitLab",
+);
+
 export interface Field {
   name: string;
   label: string;
@@ -66,7 +77,8 @@ export interface Field {
   multiline?: boolean;
 }
 
-type AuthProviderID = "email" | "magiclink" | "google" | "x" | "github";
+type AuthProviderID =
+  "email" | "magiclink" | "google" | "x" | "github" | "gitlab";
 
 export interface AuthProvider {
   id: AuthProviderID;
@@ -251,6 +263,38 @@ const allProviders: AuthProvider[] = [
       "An OAuth App accepts one callback URL. To sign in from several domains, create a GitHub App instead (up to ten callback URLs) and give it the read-only 'Email addresses' account permission.",
       "Generate a new client secret.",
       "Copy the Client ID and Client Secret into the fields above.",
+      "Save the settings and test the connection.",
+    ],
+  },
+  {
+    id: "gitlab",
+    icon: GitLabIcon,
+    name: "GitLab",
+    drawerTitle: "GitLab OAuth Settings",
+    drawerDesc: "Sign in with a GitLab application.",
+    hasRedirectUrl: true,
+    hasAuthUrl: true,
+    fields: [
+      { name: "clientId", label: "Application ID", value: "" },
+      { name: "clientSecret", label: "Secret", value: "" },
+    ],
+    steps: [
+      <>
+        Go to{" "}
+        <MuiLink
+          type="button"
+          href="https://gitlab.com/-/user_settings/applications"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          https://gitlab.com/-/user_settings/applications
+        </MuiLink>{" "}
+        and add a new application. To create it under a group, use the group's
+        Settings &gt; Applications instead.
+      </>,
+      "Set the Redirect URI to the Redirect URL above. To sign in from several domains, add one Redirect URI per line.",
+      "Keep 'Confidential' checked and select the openid, profile and email scopes.",
+      "Copy the Application ID and Secret into the fields above.",
       "Save the settings and test the connection.",
     ],
   },

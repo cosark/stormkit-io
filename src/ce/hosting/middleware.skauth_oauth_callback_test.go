@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/app/buildconf"
@@ -170,6 +171,50 @@ func (s *WithSKAuthOAuthSuite) Test_Callback_GitHub_Success() {
 	err = s.conn.QueryRow("SELECT expiry FROM stormkit_auth_providers WHERE provider_name = 'github' AND account_id = '583231'").Scan(&expiry)
 	s.Require().NoError(err)
 	s.False(expiry.Valid)
+}
+
+// Test_Callback_GitLab_Success verifies that GitLab is accepted as an OAuth
+// provider on the callback, and that its expiring token is stored with its
+// expiry.
+func (s *WithSKAuthOAuthSuite) Test_Callback_GitLab_Success() {
+	host := s.setupCallbackEnv(false)
+
+	s.Require().NoError(skauth.NewStore().SaveProvider(context.Background(), skauth.SaveProviderArgs{
+		EnvID:    host.Config.EnvID,
+		AppID:    s.app.ID,
+		Provider: &skauth.Provider{Name: skauth.ProviderGitLab, Status: true},
+	}))
+
+	token := &oauth2.Token{AccessToken: "gitlab-access-token", Expiry: time.Now().Add(2 * time.Hour)}
+
+	s.mockClient.On("Exchange", mock.Anything, mock.Anything).Return(token, nil).Once()
+	s.mockClient.On("UserInfo", mock.Anything, token).Return(&skauth.UserInfo{
+		AccountID:     "1234567",
+		Email:         "tanuki@stormkit.io",
+		EmailVerified: true,
+		FirstName:     "Tanuki",
+	}, nil).Once()
+
+	state := s.stateToken(skauth.ProviderGitLab, "https://app.example.com/login")
+
+	res, err := hosting.ServeAuth(s.oauthRequest(
+		host,
+		fmt.Sprintf("/_stormkit/auth/callback?state=%s&code=test-code", state),
+		nil,
+	))
+
+	s.Require().NoError(err)
+	s.Require().NotNil(res)
+	s.Equal(http.StatusFound, res.Status)
+	s.Require().NotNil(res.Redirect)
+	s.Equal("https://app.example.com/dashboard", *res.Redirect)
+	s.Require().Len(res.Cookies, 1)
+	s.Equal(buildconf.SessionCookieName, res.Cookies[0].Name)
+
+	var expiry sql.NullTime
+	err = s.conn.QueryRow("SELECT expiry FROM stormkit_auth_providers WHERE provider_name = 'gitlab' AND account_id = '1234567'").Scan(&expiry)
+	s.Require().NoError(err)
+	s.True(expiry.Valid)
 }
 
 // Test_Callback_UnverifiedEmail_RedirectsWithError checks that a provider which

@@ -225,6 +225,20 @@ describe("~/pages/apps/[id]/environments/[env-id]/skauth/SkAuth.tsx", () => {
         expect(wrapper.getByText("Google")).toBeTruthy();
         expect(wrapper.getByText("X / Twitter (OAuth 2.0)")).toBeTruthy();
         expect(wrapper.getByText("GitHub")).toBeTruthy();
+        expect(wrapper.getByText("GitLab")).toBeTruthy();
+      });
+    });
+
+    it("should open the GitLab drawer with its redirect URL", async () => {
+      await waitFor(() => {
+        expect(wrapper.getByText("GitLab")).toBeTruthy();
+      });
+
+      fireEvent.click(wrapper.getByText("GitLab"));
+
+      await waitFor(() => {
+        expect(wrapper.getByText("GitLab OAuth Settings")).toBeTruthy();
+        expect(wrapper.getByText(/add a new application/)).toBeTruthy();
       });
     });
 
