@@ -12,6 +12,7 @@ import (
 	publicapiv1 "github.com/stormkit-io/stormkit-io/src/ce/api/public/v1"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/user/usertest"
 	"github.com/stormkit-io/stormkit-io/src/ee/api/audit"
+	"github.com/stormkit-io/stormkit-io/src/lib/config"
 	"github.com/stormkit-io/stormkit-io/src/lib/database/databasetest"
 	"github.com/stormkit-io/stormkit-io/src/lib/factory"
 	"github.com/stormkit-io/stormkit-io/src/lib/shttp"
@@ -32,11 +33,39 @@ func (s *HandlerMailerSuite) BeforeTest(suiteName, _ string) {
 	s.Factory = factory.New(s.conn)
 	s.usr = s.MockUser(nil)
 	s.app = s.MockApp(s.usr, nil)
+
+	// Other suites in this package can leave the Cloud edition on, and the
+	// instance mailer is self-hosted only.
+	config.SetIsSelfHosted(true)
 }
 
 func (s *HandlerMailerSuite) AfterTest(_, _ string) {
 	s.conn.CloseTx()
+	config.SetIsSelfHosted(false)
 	buildconf.SendMailFunc = buildconf.SendMailWithDeadline
+	admin.ResetCache(context.Background())
+}
+
+// configureInstanceMailer gives the instance a default mailer.
+func (s *HandlerMailerSuite) configureInstanceMailer() {
+	cnf := admin.MustConfig().Clone()
+	cnf.MailerConfig = &admin.MailerConfig{
+		Host:     "smtp.instance.test",
+		Port:     "2525",
+		Username: "instance-user",
+		Password: "instance-secret",
+		From:     "Stormkit <noreply@instance.test>",
+	}
+
+	s.Require().NoError(admin.Store().UpsertConfig(context.Background(), cnf))
+}
+
+// postConfig sends a mailer configuration update for env.
+func (s *HandlerMailerSuite) postConfig(env *factory.MockEnv, body map[string]any) shttptest.Response {
+	body["appId"] = s.app.ID.String()
+	body["envId"] = env.ID.String()
+
+	return shttptest.RequestWithHeaders(s.handler(), shttp.MethodPost, "/v1/mailer/config", body, s.auth())
 }
 
 func (s *HandlerMailerSuite) handler() http.Handler {
@@ -492,6 +521,130 @@ func (s *HandlerMailerSuite) Test_Send_RecordsFields() {
 	s.Equal("noreply@acme.com", emails[0].From, "an omitted from falls back to the SMTP username")
 	s.Equal("Test subject", emails[0].Subject)
 	s.Equal("Test body", emails[0].Body)
+}
+
+// Test_ConfigSet_UseDefault verifies that switching to the instance mailer
+// drops the environment's own credentials.
+func (s *HandlerMailerSuite) Test_ConfigSet_UseDefault() {
+	s.configureInstanceMailer()
+	env := s.configuredEnv()
+
+	response := s.postConfig(env, map[string]any{"useDefault": true})
+	body := response.String()
+
+	s.Equal(http.StatusOK, response.Code)
+	s.Contains(body, `"useDefault":true`)
+	s.Contains(body, `"defaultAvailable":true`)
+	s.NotContains(body, "instance-secret")
+
+	stored, err := buildconf.NewStore().EnvironmentByID(context.Background(), env.ID)
+	s.Require().NoError(err)
+	s.True(stored.MailerConf.UseDefault)
+	s.Empty(stored.MailerConf.Host)
+	s.Empty(stored.MailerConf.Username)
+	s.Empty(stored.MailerConf.Password)
+}
+
+func (s *HandlerMailerSuite) Test_ConfigSet_UseDefault_NoInstanceMailer() {
+	env := s.configuredEnv()
+
+	response := s.postConfig(env, map[string]any{"useDefault": true})
+
+	s.Equal(http.StatusBadRequest, response.Code)
+	s.Contains(response.String(), "no default mailer")
+
+	stored, err := buildconf.NewStore().EnvironmentByID(context.Background(), env.ID)
+	s.Require().NoError(err)
+	s.False(stored.MailerConf.UseDefault)
+	s.Equal("super-secret", stored.MailerConf.Password)
+}
+
+// Test_ConfigSet_BackToCustom verifies that leaving the instance mailer needs
+// a full set of SMTP settings again.
+func (s *HandlerMailerSuite) Test_ConfigSet_BackToCustom() {
+	env := s.MockEnv(s.app, map[string]any{
+		"MailerConf": &buildconf.MailerConf{UseDefault: true},
+	})
+
+	response := s.postConfig(env, map[string]any{"useDefault": false, "smtpHost": "smtp.acme.test", "username": "noreply@acme.com"})
+	s.Equal(http.StatusBadRequest, response.Code)
+	s.Contains(response.String(), "Password is a required field")
+
+	response = s.postConfig(env, map[string]any{"useDefault": false, "smtpHost": "smtp.acme.test", "username": "noreply@acme.com", "password": "new-secret"})
+	s.Equal(http.StatusOK, response.Code)
+
+	stored, err := buildconf.NewStore().EnvironmentByID(context.Background(), env.ID)
+	s.Require().NoError(err)
+	s.False(stored.MailerConf.UseDefault)
+	s.Equal("new-secret", stored.MailerConf.Password)
+}
+
+// Test_ConfigSet_UseDefault_Cloud verifies that environments on Stormkit Cloud
+// cannot use the default mailer, a self-hosted feature.
+func (s *HandlerMailerSuite) Test_ConfigSet_UseDefault_Cloud() {
+	s.configureInstanceMailer()
+	config.SetIsStormkitCloud(true)
+
+	response := s.postConfig(s.configuredEnv(), map[string]any{"useDefault": true})
+
+	s.Equal(http.StatusBadRequest, response.Code)
+}
+
+func (s *HandlerMailerSuite) Test_ConfigGet_DefaultAvailable() {
+	env := s.configuredEnv()
+	url := fmt.Sprintf("/v1/mailer/config?appId=%d&envId=%d", s.app.ID, env.ID)
+
+	response := shttptest.RequestWithHeaders(s.handler(), shttp.MethodGet, url, nil, s.auth())
+	s.Equal(http.StatusOK, response.Code)
+	s.Contains(response.String(), `"defaultAvailable":false`)
+
+	s.configureInstanceMailer()
+
+	response = shttptest.RequestWithHeaders(s.handler(), shttp.MethodGet, url, nil, s.auth())
+	s.Equal(http.StatusOK, response.Code)
+	s.Contains(response.String(), `"defaultAvailable":true`)
+}
+
+// Test_Send_UseDefault verifies that an environment on the instance mailer
+// sends through it, from the instance's From address when it sets none.
+func (s *HandlerMailerSuite) Test_Send_UseDefault() {
+	s.configureInstanceMailer()
+
+	env := s.MockEnv(s.app, map[string]any{
+		"MailerConf": &buildconf.MailerConf{UseDefault: true},
+	})
+
+	var sentAddr, sentFrom string
+
+	buildconf.SendMailFunc = func(addr string, _ smtp.Auth, from string, _ []string, _ []byte) error {
+		sentAddr = addr
+		sentFrom = from
+		return nil
+	}
+
+	response := shttptest.RequestWithHeaders(
+		s.handler(),
+		shttp.MethodPost,
+		"/v1/mail",
+		map[string]string{
+			"appId":   s.app.ID.String(),
+			"envId":   env.ID.String(),
+			"to":      "someone@acme.com",
+			"subject": "Test",
+			"body":    "Hello",
+		},
+		s.auth(),
+	)
+
+	s.Equal(http.StatusOK, response.Code)
+	s.Contains(response.String(), `"delivered":true`)
+	s.Equal("smtp.instance.test:2525", sentAddr)
+	s.Equal("noreply@instance.test", sentFrom)
+
+	emails, err := buildconf.MailerStore().Emails(context.Background(), env.ID)
+	s.Require().NoError(err)
+	s.Require().Len(emails, 1)
+	s.Equal("Stormkit <noreply@instance.test>", emails[0].From)
 }
 
 func TestHandlerMailerSuite(t *testing.T) {

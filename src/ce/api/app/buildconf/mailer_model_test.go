@@ -1,11 +1,14 @@
 package buildconf_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/smtp"
 	"testing"
 
+	"github.com/stormkit-io/stormkit-io/src/ce/api/admin"
 	"github.com/stormkit-io/stormkit-io/src/ce/api/app/buildconf"
+	"github.com/stormkit-io/stormkit-io/src/lib/config"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -13,8 +16,29 @@ type MailerModelSuite struct {
 	suite.Suite
 }
 
+func (s *MailerModelSuite) BeforeTest(_, _ string) {
+	config.SetIsSelfHosted(true)
+}
+
 func (s *MailerModelSuite) AfterTest(_, _ string) {
+	config.SetIsSelfHosted(false)
 	buildconf.SendMailFunc = buildconf.SendMailWithDeadline
+	admin.ResetCache(context.Background())
+}
+
+// instanceMailer makes the instance's default mailer the given one.
+func (s *MailerModelSuite) instanceMailer(mailer *admin.MailerConfig) {
+	admin.SetConfig(&admin.InstanceConfig{MailerConfig: mailer})
+}
+
+func (s *MailerModelSuite) defaultMailer() *admin.MailerConfig {
+	return &admin.MailerConfig{
+		Host:     "smtp.instance.test",
+		Port:     "2525",
+		Username: "instance-user",
+		Password: "instance-secret",
+		From:     "Stormkit <noreply@instance.test>",
+	}
 }
 
 // Test_MarshalJSON_MasksPassword makes masking the default rather than a
@@ -125,6 +149,77 @@ func (s *MailerModelSuite) Test_Send_EnvelopeUsesParamsFromAddress() {
 	}))
 
 	s.Equal("noreply@acme.com", capturedFrom)
+}
+
+func (s *MailerModelSuite) Test_Mailer_Custom() {
+	custom := &buildconf.MailerConf{Host: "smtp.acme.test", Username: "u", Password: "p"}
+	s.instanceMailer(s.defaultMailer())
+
+	s.Same(custom, (&buildconf.Env{MailerConf: custom}).Mailer())
+}
+
+func (s *MailerModelSuite) Test_Mailer_UseDefault() {
+	s.instanceMailer(s.defaultMailer())
+
+	mailer := (&buildconf.Env{MailerConf: &buildconf.MailerConf{UseDefault: true}}).Mailer()
+
+	s.Require().NotNil(mailer)
+	s.Equal("smtp.instance.test", mailer.Host)
+	s.Equal("2525", mailer.Port)
+	s.Equal("instance-user", mailer.Username)
+	s.Equal("instance-secret", mailer.Password)
+	s.Equal("Stormkit <noreply@instance.test>", mailer.DefaultFrom)
+}
+
+// Test_Mailer_UseDefault_NotConfigured verifies that an environment on the
+// instance mailer has no mailer while the admin has not configured one, so
+// emails are recorded but not sent.
+func (s *MailerModelSuite) Test_Mailer_UseDefault_NotConfigured() {
+	s.instanceMailer(nil)
+
+	s.Nil((&buildconf.Env{MailerConf: &buildconf.MailerConf{UseDefault: true}}).Mailer())
+}
+
+func (s *MailerModelSuite) Test_Mailer_None() {
+	s.instanceMailer(s.defaultMailer())
+
+	s.Nil((&buildconf.Env{}).Mailer())
+}
+
+// Test_From verifies that the requested sender wins, and that the instance
+// mailer's From address is used for emails that set none.
+func (s *MailerModelSuite) Test_From() {
+	mailer := &buildconf.MailerConf{Username: "instance-user", DefaultFrom: "Stormkit <noreply@instance.test>"}
+
+	s.Equal("Acme <hello@acme.test>", mailer.From("Acme <hello@acme.test>"))
+	s.Equal("Stormkit <noreply@instance.test>", mailer.From(""))
+	s.Equal("instance-user", (&buildconf.MailerConf{Username: "instance-user"}).From(""))
+}
+
+// Test_InstanceMailer_Cloud verifies that the default mailer, a self-hosted
+// feature, is never used on Stormkit Cloud.
+func (s *MailerModelSuite) Test_InstanceMailer_Cloud() {
+	config.SetIsStormkitCloud(true)
+
+	s.instanceMailer(s.defaultMailer())
+
+	s.Nil(buildconf.InstanceMailer())
+	s.Nil((&buildconf.Env{MailerConf: &buildconf.MailerConf{UseDefault: true}}).Mailer())
+}
+
+func (s *MailerModelSuite) Test_Bytes_RoundTripsUseDefault() {
+	data, err := (&buildconf.MailerConf{UseDefault: true}).Bytes()
+	s.Require().NoError(err)
+
+	// Versions before UseDefault decode the column into a string map, so the
+	// stored config must stay readable for them.
+	legacy := map[string]string{}
+	s.Require().NoError(json.Unmarshal(data, &legacy))
+
+	mailer := &buildconf.MailerConf{}
+	s.Require().NoError(json.Unmarshal(data, mailer))
+	s.True(mailer.UseDefault)
+	s.Equal(true, mailer.JSON()["useDefault"])
 }
 
 func TestMailerModel(t *testing.T) {

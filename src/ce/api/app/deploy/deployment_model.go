@@ -164,7 +164,12 @@ func New(a *app.App) *Deployment {
 }
 
 // includeMailerVars includes the mailer variables into the deployment build config.
+// An environment on the instance's default mailer gets the default's settings.
 func (d *Deployment) includeMailerVars(mailer *buildconf.MailerConf) {
+	if mailer != nil && mailer.UseDefault {
+		mailer = buildconf.InstanceMailer()
+	}
+
 	if mailer == nil {
 		return
 	}

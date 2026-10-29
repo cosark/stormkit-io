@@ -132,6 +132,16 @@ export default function AdminLayout({ children }: Props) {
                   isActive: pathname.includes("/admin/auth"),
                 }}
               />
+              {!isCloud && (
+                <MenuLink
+                  inline
+                  item={{
+                    path: "/admin/mailer",
+                    text: "Mailer",
+                    isActive: pathname.includes("/admin/mailer"),
+                  }}
+                />
+              )}
               {isCloud && (
                 <MenuLink
                   inline
