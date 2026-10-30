@@ -61,6 +61,10 @@ ghcr.io/stormkit-io/hosting:latest
 A PostgreSQL database and a Redis instance are required alongside them.
 See the [self-hosting guide](https://www.stormkit.io/docs/self-hosting/getting-started).
 
+## One-Click Deploy
+
+[![Deploy on RepoCloud](https://d16t0pc4846x52.cloudfront.net/deploylobe.svg)](https://repocloud.io/details/Stormkit/)
+
 ## Documentation
 
 [www.stormkit.io/docs](https://www.stormkit.io/docs) — or read it in this repo
